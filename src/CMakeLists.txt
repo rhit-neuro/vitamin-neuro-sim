@@ -55,7 +55,7 @@ set(
 
 add_executable(${MAIN_NAME} ${SOURCE} ${INCLUDE_SOURCE} ${PROTO_HEADER} ${PROTO_SRC})
 
-target_link_libraries(${MAIN_NAME} proto ${Boost_LIBRARIES} ${Protobuf_LIBRARIES})
+target_link_libraries(${MAIN_NAME} proto ${Boost_LIBRARIES} ${Protobuf_LIBRARIES} ${MPI_CXX_LIBRARIES})
 
 #######################
 # Main Tests
