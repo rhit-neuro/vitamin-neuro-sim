@@ -1,7 +1,7 @@
 Parallel Neuro-Simulation
 =========
 
-**Rewritten neuro-simulation project that aims to optimize using parallelization.**
+**Fork of parallel-neuro-sim that uses MPI for parallelization, grouping neurons onto separate processors**
 
 ## Platforms Supported:
  - Linux
