@@ -60,7 +60,6 @@ namespace ode {
     class HodgkinHuxleyEquation {
       public:
         HodgkinHuxleyEquation();
-        ~HodgkinHuxleyEquation();
         /**
          * Calculates the next set of derivatives based on the current state variables and the time differential.
          * This function must exist for all systems of ODEs to be solved by

@@ -95,11 +95,12 @@ int main(int argc, char** argv) {
   if (mpiRank == 0)
     tLogger.recordCalculationStartTime();
   integrate_const(
-    make_controlled(
-      c.absoluteError,
-      c.relativeError,
-      runge_kutta_dopri5<storage_type>()
-    ),
+    // make_controlled(
+    //   c.absoluteError,
+    //   c.relativeError,
+    //   runge_kutta_dopri5<storage_type>()
+    // ),
+    runge_kutta4<storage_type>(),
     equation,
     c.getInitialStateValues(),
     c.startTime,

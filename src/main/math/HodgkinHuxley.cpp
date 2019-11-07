@@ -19,21 +19,10 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   isynsEXY = (double*) malloc(numOfNeurons*sizeof(double));
 
   MPI_Win_create(isynsXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winXY);
-  MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY);
-  
+  MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY); 
 }
-
-// Destructor
-ode::hodgkinhuxley::HodgkinHuxleyEquation::~HodgkinHuxleyEquation() {
-  
-  MPI_Win_free(&winEXY);
-  MPI_Win_free(&winXY);
-
-  // MPI_Free_mem(isynsEXY);
-  // MPI_Free_mem(isynsXY);
-  free(isynsXY);
-  free(isynsEXY);
-}
+//FIXME - We aren't freeing these currently because putting that in a destructor gets called after MPI_Finalize
+// and throws a nasty error. This should be fixed in the long-term but we need to do a bigger refactor anyway.
 
 
 //FIXME - this should iterate over the neurons in this rank and work on each of their synapses
