@@ -10,6 +10,29 @@ void ode::hodgkinhuxley::calculateNextState(const storage_type &xs, storage_type
 
 ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   this->pc = &(ProgramConfig::getInstance());
+
+  int numOfNeurons = pc->numOfNeurons;
+  // // FIXME: MPI_Alloc rather than malloc for now; may be buggy as all get-out
+  // malloc(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsXY);
+  // malloc(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsEXY);
+  isynsXY = (double*) malloc(numOfNeurons*sizeof(double));
+  isynsEXY = (double*) malloc(numOfNeurons*sizeof(double));
+
+  MPI_Win_create(isynsXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winXY);
+  MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY);
+  
+}
+
+// Destructor
+ode::hodgkinhuxley::HodgkinHuxleyEquation::~HodgkinHuxleyEquation() {
+  
+  MPI_Win_free(&winEXY);
+  MPI_Win_free(&winXY);
+
+  // MPI_Free_mem(isynsEXY);
+  // MPI_Free_mem(isynsXY);
+  free(isynsXY);
+  free(isynsEXY);
 }
 
 
@@ -55,14 +78,14 @@ void isyns_pt1(double *arrP, double *arrM, double *arrG,
     double esynXiYi = Esyn*xiyi;
 
     if (mpiRank == 0)
-    { //FIXME - should be MPI_SUM
-      MPI_Accumulate(&xiyi, 1, MPI_DOUBLE, 1, 0, 1, MPI_DOUBLE, MPI_REPLACE, winXY);
-      MPI_Accumulate(&esynXiYi, 1, MPI_DOUBLE, 1, 0, 1, MPI_DOUBLE, MPI_REPLACE, winEXY);
+    { 
+      MPI_Accumulate(&xiyi, 1, MPI_DOUBLE, 1, 0, 1, MPI_DOUBLE, MPI_SUM, winXY);
+      MPI_Accumulate(&esynXiYi, 1, MPI_DOUBLE, 1, 0, 1, MPI_DOUBLE, MPI_SUM, winEXY);
     }
     else
     {
-      MPI_Accumulate(&xiyi, 1, MPI_DOUBLE, 0, 0, 1, MPI_DOUBLE, MPI_REPLACE, winXY);
-      MPI_Accumulate(&esynXiYi, 1, MPI_DOUBLE, 0, 0, 1, MPI_DOUBLE, MPI_REPLACE, winEXY);
+      MPI_Accumulate(&xiyi, 1, MPI_DOUBLE, 0, 0, 1, MPI_DOUBLE, MPI_SUM, winXY);
+      MPI_Accumulate(&esynXiYi, 1, MPI_DOUBLE, 0, 0, 1, MPI_DOUBLE, MPI_SUM, winEXY);
     }
   }
 }
@@ -119,15 +142,9 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
 
-  double* isynsXY;
-  double* isynsEXY;
-  MPI_Win winXY, winEXY;
-  MPI_Alloc_mem(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsXY);
-  MPI_Alloc_mem(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsEXY);
+  // Zero this out just to be safe.
   for (int i=0; i<numOfNeurons; i++)
     isynsXY[i] = isynsEXY[i] = 0;
-  MPI_Win_create(isynsXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winXY);
-  MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY);
 
   //Open fence
   MPI_Win_fence(0, winXY);
@@ -138,10 +155,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   // Close fence
   MPI_Win_fence(0, winEXY);
   MPI_Win_fence(0, winXY);
-  
-
-  MPI_Win_free(&winEXY);
-  MPI_Win_free(&winXY);
   
 
 #if USE_OPENMP
@@ -198,9 +211,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     // Calculate dMhdt
     arrdMhdt[i] = dMhdt(V, arrMh[i]);
   }
-  
-  MPI_Free_mem(isynsEXY);
-  MPI_Free_mem(isynsXY);
   
 #if USE_OPENMP
   #pragma omp parallel for default(shared)

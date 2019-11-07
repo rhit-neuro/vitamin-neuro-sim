@@ -4,6 +4,7 @@
 
 #include "../global/GlobalDefinitions.h"
 #include "../config/ProgramConfig.h"
+#include <mpi.h>
 
 using namespace global_definitions;
 using namespace config;
@@ -59,6 +60,7 @@ namespace ode {
     class HodgkinHuxleyEquation {
       public:
         HodgkinHuxleyEquation();
+        ~HodgkinHuxleyEquation();
         /**
          * Calculates the next set of derivatives based on the current state variables and the time differential.
          * This function must exist for all systems of ODEs to be solved by
@@ -69,6 +71,13 @@ namespace ode {
         void calculateNextState(const storage_type &xs, storage_type &dxdts, double t);
 
       protected:
+        //FIXME: These should probably be storage_type rather than double
+        //These are used for sending/receiving data
+        double* isynsXY;
+        double* isynsEXY;
+        MPI_Win winXY, winEXY;
+
+
         // We use function pointers to allow easy composition
         double (* dMk2dt) (double V, double mk2) = ::ode::hodgkinhuxley::curve::dMk2dt;
         double (* dMpdt) (double V, double mp) = ::ode::hodgkinhuxley::curve::dMpdt;
