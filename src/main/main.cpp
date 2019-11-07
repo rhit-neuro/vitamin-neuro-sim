@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
     c.getInitialStateValues(),
     c.startTime,
     c.endTime,
-    0.00025,
+    0.0000001,
     [&](const storage_type &x, const double t) {
       storage_type toWrite(bufferSize);
       toWrite[0] = t;

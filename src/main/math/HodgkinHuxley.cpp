@@ -1,5 +1,8 @@
 #include "ODE.h"
 
+#include <iostream>
+#include <fstream>
+
 using namespace config;
 
 void ode::hodgkinhuxley::calculateNextState(const storage_type &xs, storage_type &dxdts, double t) {
@@ -12,6 +15,11 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
 }
 
 void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage_type &x, storage_type &dxdt, double t) {
+  ofstream timestamps;
+  timestamps.open("timestamps.csv", std::ios::out | std::ios::app);
+  timestamps << t << std::endl;
+  timestamps.close();
+
   ProgramConfig &c = *pc;
   double *arrV = c.getVArray(const_cast<storage_type &>(x));
   double *arrMk2 = c.getMk2Array(const_cast<storage_type &>(x));
