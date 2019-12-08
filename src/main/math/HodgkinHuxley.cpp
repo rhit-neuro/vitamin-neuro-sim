@@ -15,11 +15,11 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   // // FIXME: MPI_Alloc rather than malloc for now; may be buggy as all get-out
   // malloc(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsXY);
   // malloc(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsEXY);
-  isynsXY = (double*) malloc(numOfNeurons*sizeof(double));
-  isynsEXY = (double*) malloc(numOfNeurons*sizeof(double));
+  //isynsXY = (double*) malloc(numOfNeurons*sizeof(double));
+  //isynsEXY = (double*) malloc(numOfNeurons*sizeof(double));
 
-  MPI_Win_create(isynsXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winXY);
-  MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY); 
+  //MPI_Win_create(isynsXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winXY);
+  //MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY); 
 }
 //FIXME - We aren't freeing these currently because putting that in a destructor gets called after MPI_Finalize
 // and throws a nasty error. This should be fixed in the long-term but we need to do a bigger refactor anyway.
@@ -131,21 +131,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
 
-  // Zero this out just to be safe.
-  for (int i=0; i<numOfNeurons; i++)
-    isynsXY[i] = isynsEXY[i] = 0;
-
-  //Open fence
-  MPI_Win_fence(0, winXY);
-  MPI_Win_fence(0, winEXY);
-
-  isyns_pt1(arrP, arrM, arrG, c.getAllSynapseConstants(), winXY, winEXY);
-
-  // Close fence
-  MPI_Win_fence(0, winEXY);
-  MPI_Win_fence(0, winXY);
-  
-
 #if USE_OPENMP
   #pragma omp parallel for default(shared)
 #endif
@@ -167,8 +152,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
                    ikf(n.gbarkf, arrMkf[i], V, n.ek) +
                    ih(n.gbarh, arrMh[i], V, n.eh) +
                    il(n.gbarl, V, n.el) +
-                   isynsXY[i]*V - isynsEXY[i] /* <-- This is the new Isyns call */
-                   /*isyns(V, arrP, arrM, arrG, c.getAllSynapseConstants(), *(n.incoming), n.incoming->size())*/
+                   isyns(V, arrP, arrM, arrG, c.getAllSynapseConstants(), *(n.incoming), n.incoming->size())
     ) / n.capacitance;
 
     // Calculate dMk2dt

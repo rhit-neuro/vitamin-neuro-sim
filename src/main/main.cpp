@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
   if (mpiRank == 0)
   {
     config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
-    config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 9
+    config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
   }
   else
   {
@@ -92,29 +92,72 @@ int main(int argc, char** argv) {
 
   sequential::ode_system_function *equation = factory::equation::getEquation(vm);
 
+  storage_type x = c.getInitialStateValues();
+
+  // I expect this to be a cotrolled_runge_kutta<runge_kutta_dopri5<storage_type>>
+  // So I can do try_step() and it will behave as expected. Otherwise we will have to call do_step all
+  // 6 times. And I'd rather not do that.
+  auto myStepper = make_controlled(c.absoluteError, c.relativeError, runge_kutta_dopri5<storage_type>());
+  auto timeData = (double*) malloc(2*sizeof(double));
+  auto observerStep = 0.00025;
+  timeData[0] = c.startTime;
+  timeData[1] = observerStep;
+
   if (mpiRank == 0)
     tLogger.recordCalculationStartTime();
-  integrate_const(
-    // make_controlled(
-    //   c.absoluteError,
-    //   c.relativeError,
-    //   runge_kutta_dopri5<storage_type>()
-    // ),
-    runge_kutta4<storage_type>(),
-    equation,
-    c.getInitialStateValues(),
-    c.startTime,
-    c.endTime,
-    0.00025,
-    [&](const storage_type &x, const double t) {
+
+  while (timeData[0] < c.endTime)
+  {
+    if (fmod(timeData[0], observerStep) < 0.000001)
+    {
       storage_type toWrite(bufferSize);
-      toWrite[0] = t;
+      toWrite[0] = timeData[0];
       for (int i = 0; i < numNeuron; i++) {
         toWrite[i+1] = x[i];
       }
       buffer->writeData(&(toWrite[0]));
     }
-  );
+
+    while (success != myStepper.try_step(equation, x, timeData[0], timeData[1]));
+
+
+    // else
+    // {
+    //   // Receive a computation request from rank 0
+    //   MPI_Recv(timeData, 2, MPI_DOUBLE, 0, TIME_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      
+    //   // This is a controlled_step_result, which will either be success or fail
+    //   // `while (success != myStepper.try_step(...));` should also work since t and dt get updated
+    //   auto retVal = myStepper.try_step(equation, x, timeData[0], timeData[1]);
+    //   while (retVal == fail)
+    //     myStepper.try_step(equation, x, timeData[0], timeData[1]);
+    //   // Let rank 0 know what my new time is and what timestep I would like next
+    //   MPI_Send(timeData, 2, MPI_DOUBLE, 0, TIME_SYNC, MPI_COMM_WORLD);
+    // }
+  }
+
+
+  // integrate_const(
+  //   // make_controlled(
+  //   //   c.absoluteError,
+  //   //   c.relativeError,
+  //   //   runge_kutta_dopri5<storage_type>()
+  //   // ),
+  //   runge_kutta4<storage_type>(),
+  //   equation,
+  //   c.getInitialStateValues(),
+  //   c.startTime,
+  //   c.endTime,
+  //   0.00025,
+  //   [&](const storage_type &x, const double t) {
+  //     storage_type toWrite(bufferSize);
+  //     toWrite[0] = t;
+  //     for (int i = 0; i < numNeuron; i++) {
+  //       toWrite[i+1] = x[i];
+  //     }
+  //     buffer->writeData(&(toWrite[0]));
+  //   }
+  // );
   if (mpiRank == 0)
     tLogger.recordCalculationEndTime();
 

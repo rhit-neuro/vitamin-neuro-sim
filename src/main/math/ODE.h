@@ -72,9 +72,9 @@ namespace ode {
       protected:
         //FIXME: These should probably be storage_type rather than double
         //These are used for sending/receiving data
-        double* isynsXY;
-        double* isynsEXY;
-        MPI_Win winXY, winEXY;
+        //double* isynsXY;
+        //double* isynsEXY;
+        //MPI_Win winXY, winEXY;
 
 
         // We use function pointers to allow easy composition
