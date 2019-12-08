@@ -57,16 +57,16 @@ int main(int argc, char** argv) {
   // int synapseAssignments[2][1] = {{1}, {0}}; //synapse 0 goes from N2 to N1
 
   //FIXME: Don't hard-code this either, you idiot
-  if (mpiRank == 0)
-  {
-    config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
-    config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
-  }
-  else
-  {
-    config.mutable_neurons()->DeleteSubrange(0,1);
-    config.mutable_synapses()->DeleteSubrange(1,1);
-  }
+  // if (mpiRank == 0)
+  // {
+  //   config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
+  //   config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
+  // }
+  // else
+  // {
+  //   config.mutable_neurons()->DeleteSubrange(0,1);
+  //   config.mutable_synapses()->DeleteSubrange(1,1);
+  // }
 
   // Now that we've pruned the protobuf config, we'll initialize only the items belonging
   // to our rank into the ProgramConfig, which will be referenced by the equation.
@@ -99,26 +99,37 @@ int main(int argc, char** argv) {
   // 6 times. And I'd rather not do that.
   auto myStepper = make_controlled(c.absoluteError, c.relativeError, runge_kutta_dopri5<storage_type>());
   auto timeData = (double*) malloc(2*sizeof(double));
-  auto observerStep = 0.00025;
+  const auto observerStep = 0.00025;
   timeData[0] = c.startTime;
   timeData[1] = observerStep;
+  double currentTime = timeData[0];
 
   if (mpiRank == 0)
     tLogger.recordCalculationStartTime();
 
-  while (timeData[0] < c.endTime)
+  while ((currentTime+observerStep) <= c.endTime)
   {
-    if (fmod(timeData[0], observerStep) < 0.000001)
-    {
-      storage_type toWrite(bufferSize);
-      toWrite[0] = timeData[0];
-      for (int i = 0; i < numNeuron; i++) {
-        toWrite[i+1] = x[i];
-      }
-      buffer->writeData(&(toWrite[0]));
+    storage_type toWrite(bufferSize);
+    toWrite[0] = currentTime;
+    for (int i = 0; i < numNeuron; i++) {
+      toWrite[i+1] = x[i];
     }
+    buffer->writeData(&(toWrite[0]));
 
-    while (success != myStepper.try_step(equation, x, timeData[0], timeData[1]));
+
+    double targetTime = currentTime + observerStep;
+    timeData[1] = observerStep; // start each "instance" with this dt
+
+    while (currentTime < targetTime)
+    {
+      if (targetTime < (currentTime + timeData[1])) // guarantee that we hit target_time exactly
+        timeData[1] = targetTime - currentTime;
+
+      while (success != myStepper.try_step(equation, x, timeData[0], timeData[1]));
+      currentTime = timeData[0];
+    }
+    currentTime = targetTime; // avoid error propagation
+    
 
 
     // else
@@ -161,6 +172,7 @@ int main(int argc, char** argv) {
   if (mpiRank == 0)
     tLogger.recordCalculationEndTime();
 
+  free(timeData);
   delete buffer;
 
   if (mpiRank == 0)

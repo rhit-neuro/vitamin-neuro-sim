@@ -130,7 +130,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
 
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
-
 #if USE_OPENMP
   #pragma omp parallel for default(shared)
 #endif
@@ -138,8 +137,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     using namespace std;
     const NeuronConstants &n = c.getNeuronConstantAt(i);
     const double V = arrV[i];
-
-    //std::cout << mpiRank << " has xy=" << isynsXY[i] << " and exy=" << isynsEXY[1] << endl;
 
     // Calculate dVdt
     arrdVdt[i] = -(ina(n.gbarna, arrMna[i], arrHna[i], V, n.ena) +
@@ -184,15 +181,13 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     // Calculate dMhdt
     arrdMhdt[i] = dMhdt(V, arrMh[i]);
   }
-  
 #if USE_OPENMP
   #pragma omp parallel for default(shared)
 #endif
   for (int j = 0; j < numOfSynapses; j++) {
     using namespace std;
     const SynapseConstants &s = c.getSynapseConstantAt(j);
-    // FIXME!! - This needs to be translated to our rank's index of neurons.
-    const int sourceNeuronIndex = 0; //s.source;
+    const int sourceNeuronIndex = s.source;
     const NeuronConstants &n = c.getNeuronConstantAt(sourceNeuronIndex);
     const double V = arrV[sourceNeuronIndex];
 
