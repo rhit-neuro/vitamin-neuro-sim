@@ -16,6 +16,16 @@ using namespace global_definitions;
 using namespace boost::numeric::odeint;
 using namespace std;
 
+void observer(storage_type x, double currentTime, int numNeurons, int bufferSize, AsyncBuffer* buffer)
+{
+  storage_type toWrite(bufferSize);
+  toWrite[0] = currentTime;
+  for (int i = 0; i < numNeurons; i++) {
+    toWrite[i+1] = x[i];
+  }
+  buffer->writeData(&(toWrite[0]));
+}
+
 int main(int argc, char** argv) {
   MPI_Init(&argc, &argv);
   int mpiRank, mpiSize;
@@ -93,7 +103,6 @@ int main(int argc, char** argv) {
   sequential::ode_system_function *equation = factory::equation::getEquation(vm);
 
   storage_type x = c.getInitialStateValues();
-
   auto myStepper = make_controlled(c.absoluteError, c.relativeError, runge_kutta_dopri5<storage_type>());
   auto timeData = (double*) malloc(2*sizeof(double));
   double observerStep = 0.00025;
@@ -106,17 +115,7 @@ int main(int argc, char** argv) {
   int steps = 0;
   while ((timeData[0]+observerStep) <= c.endTime)
   {
-    storage_type toWrite(bufferSize); // You should probably make a function for this... Or an integrate_const-alike
-    toWrite[0] = timeData[0];
-    for (int i = 0; i < numNeuron; i++) {
-      toWrite[i+1] = x[i];
-    }
-    buffer->writeData(&(toWrite[0])); 
-
-    // integrate_adaptive(myStepper, equation, x, timeData[0], timeData[0]+observerStep, timeData[1], null_observer());
-     steps++;
-    // //timeData[0] = c.startTime + static_cast<double>(steps)*observerStep;
-    // timeData[0] += observerStep;
+    observer(x, timeData[0], numNeuron, bufferSize, buffer);
 
     // We only want to integrate one observerStep at a time.
     double targetTime = timeData[0] + observerStep;
@@ -126,44 +125,22 @@ int main(int argc, char** argv) {
       if (targetTime < (timeData[0] + timeData[1])) // guarantee that we hit target_time exactly
         timeData[1] = targetTime - timeData[0];
 
-      controlled_step_result result;
+      controlled_step_result result; // either success or fail
       do
       {
         result = myStepper.try_step(equation, x, timeData[0], timeData[1]);
       } while (result == fail);
     }
+
+    // We do this rather than time+=observerStep because that can compound floating-point error
+    // Boost does this same thing with their integrate_const function.
+    steps++;
     timeData[0] = c.startTime + static_cast<double>(steps)*observerStep;
 
   }
-  // Write the last value, at c.endTime.
-  storage_type toWrite(bufferSize);
-  toWrite[0] = timeData[0];
-  for (int i = 0; i < numNeuron; i++) {
-    toWrite[i+1] = x[i];
-  }
-  buffer->writeData(&(toWrite[0]));
+  // Make an observation at t=c.endTime
+  observer(x, timeData[0], numNeuron, bufferSize, buffer);
 
-
-  // integrate_const(
-  //   make_controlled(
-  //     c.absoluteError,
-  //     c.relativeError,
-  //     runge_kutta_dopri5<storage_type>()
-  //   ),
-  //   equation,
-  //   c.getInitialStateValues(),
-  //   c.startTime,
-  //   c.endTime,
-  //   0.00025,
-  //   [&](const storage_type &x, const double t) {
-  //     storage_type toWrite(bufferSize);
-  //     toWrite[0] = t;
-  //     for (int i = 0; i < numNeuron; i++) {
-  //       toWrite[i+1] = x[i];
-  //     }
-  //     buffer->writeData(&(toWrite[0]));
-  //   }
-  // );
   if (mpiRank == 0)
     tLogger.recordCalculationEndTime();
 
