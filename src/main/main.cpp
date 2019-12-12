@@ -94,67 +94,62 @@ int main(int argc, char** argv) {
 
   storage_type x = c.getInitialStateValues();
 
-  // I expect this to be a cotrolled_runge_kutta<runge_kutta_dopri5<storage_type>>
-  // So I can do try_step() and it will behave as expected. Otherwise we will have to call do_step all
-  // 6 times. And I'd rather not do that.
   auto myStepper = make_controlled(c.absoluteError, c.relativeError, runge_kutta_dopri5<storage_type>());
   auto timeData = (double*) malloc(2*sizeof(double));
-  const auto observerStep = 0.00025;
+  double observerStep = 0.00025;
   timeData[0] = c.startTime;
   timeData[1] = observerStep;
-  double currentTime = timeData[0];
 
   if (mpiRank == 0)
     tLogger.recordCalculationStartTime();
 
-  while ((currentTime+observerStep) <= c.endTime)
+  int steps = 0;
+  while ((timeData[0]+observerStep) <= c.endTime)
   {
-    storage_type toWrite(bufferSize);
-    toWrite[0] = currentTime;
+    storage_type toWrite(bufferSize); // You should probably make a function for this... Or an integrate_const-alike
+    toWrite[0] = timeData[0];
     for (int i = 0; i < numNeuron; i++) {
       toWrite[i+1] = x[i];
     }
-    buffer->writeData(&(toWrite[0]));
+    buffer->writeData(&(toWrite[0])); 
 
+    // integrate_adaptive(myStepper, equation, x, timeData[0], timeData[0]+observerStep, timeData[1], null_observer());
+     steps++;
+    // //timeData[0] = c.startTime + static_cast<double>(steps)*observerStep;
+    // timeData[0] += observerStep;
 
-    double targetTime = currentTime + observerStep;
-    timeData[1] = observerStep; // start each "instance" with this dt
+    // We only want to integrate one observerStep at a time.
+    double targetTime = timeData[0] + observerStep;
 
-    while (currentTime < targetTime)
+    while (timeData[0] < targetTime)
     {
-      if (targetTime < (currentTime + timeData[1])) // guarantee that we hit target_time exactly
-        timeData[1] = targetTime - currentTime;
+      if (targetTime < (timeData[0] + timeData[1])) // guarantee that we hit target_time exactly
+        timeData[1] = targetTime - timeData[0];
 
-      while (success != myStepper.try_step(equation, x, timeData[0], timeData[1]));
-      currentTime = timeData[0];
+      controlled_step_result result;
+      do
+      {
+        result = myStepper.try_step(equation, x, timeData[0], timeData[1]);
+      } while (result == fail);
     }
-    currentTime = targetTime; // avoid error propagation
-    
+    timeData[0] = c.startTime + static_cast<double>(steps)*observerStep;
 
-
-    // else
-    // {
-    //   // Receive a computation request from rank 0
-    //   MPI_Recv(timeData, 2, MPI_DOUBLE, 0, TIME_SYNC, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      
-    //   // This is a controlled_step_result, which will either be success or fail
-    //   // `while (success != myStepper.try_step(...));` should also work since t and dt get updated
-    //   auto retVal = myStepper.try_step(equation, x, timeData[0], timeData[1]);
-    //   while (retVal == fail)
-    //     myStepper.try_step(equation, x, timeData[0], timeData[1]);
-    //   // Let rank 0 know what my new time is and what timestep I would like next
-    //   MPI_Send(timeData, 2, MPI_DOUBLE, 0, TIME_SYNC, MPI_COMM_WORLD);
-    // }
   }
+  // Write the last value, at c.endTime.
+  storage_type toWrite(bufferSize);
+  toWrite[0] = timeData[0];
+  for (int i = 0; i < numNeuron; i++) {
+    toWrite[i+1] = x[i];
+  }
+  buffer->writeData(&(toWrite[0]));
 
 
   // integrate_const(
-  //   // make_controlled(
-  //   //   c.absoluteError,
-  //   //   c.relativeError,
-  //   //   runge_kutta_dopri5<storage_type>()
-  //   // ),
-  //   runge_kutta4<storage_type>(),
+  //   make_controlled(
+  //     c.absoluteError,
+  //     c.relativeError,
+  //     runge_kutta_dopri5<storage_type>()
+  //   ),
   //   equation,
   //   c.getInitialStateValues(),
   //   c.startTime,
@@ -172,7 +167,7 @@ int main(int argc, char** argv) {
   if (mpiRank == 0)
     tLogger.recordCalculationEndTime();
 
-  free(timeData);
+  //free(timeData);
   delete buffer;
 
   if (mpiRank == 0)

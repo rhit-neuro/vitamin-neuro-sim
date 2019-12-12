@@ -10,19 +10,7 @@ void ode::hodgkinhuxley::calculateNextState(const storage_type &xs, storage_type
 
 ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   this->pc = &(ProgramConfig::getInstance());
-
-  int numOfNeurons = pc->numOfNeurons;
-  // // FIXME: MPI_Alloc rather than malloc for now; may be buggy as all get-out
-  // malloc(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsXY);
-  // malloc(numOfNeurons*sizeof(double), MPI_INFO_NULL, &isynsEXY);
-  //isynsXY = (double*) malloc(numOfNeurons*sizeof(double));
-  //isynsEXY = (double*) malloc(numOfNeurons*sizeof(double));
-
-  //MPI_Win_create(isynsXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winXY);
-  //MPI_Win_create(isynsEXY, numOfNeurons*sizeof(double), sizeof(double), MPI_INFO_NULL, MPI_COMM_WORLD, &winEXY); 
 }
-//FIXME - We aren't freeing these currently because putting that in a destructor gets called after MPI_Finalize
-// and throws a nasty error. This should be fixed in the long-term but we need to do a bigger refactor anyway.
 
 
 //FIXME - this should iterate over the neurons in this rank and work on each of their synapses
