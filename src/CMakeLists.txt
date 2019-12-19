@@ -47,6 +47,8 @@ set(
   main/math/LUT.h
   main/math/ODE.h
   main/math/SoftLUT.cpp
+  main/math/VITAMIN.h
+  main/math/VITAMIN.cpp
   main/util/ArgParser.cpp
   main/util/ArgParser.h
   main/util/JsonToProtobufConfigConverter.cpp

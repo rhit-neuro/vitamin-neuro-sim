@@ -67,16 +67,16 @@ int main(int argc, char** argv) {
   // int synapseAssignments[2][1] = {{1}, {0}}; //synapse 0 goes from N2 to N1
 
   //FIXME: Don't hard-code this either, you idiot
-  // if (mpiRank == 0)
-  // {
-  //   config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
-  //   config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
-  // }
-  // else
-  // {
-  //   config.mutable_neurons()->DeleteSubrange(0,1);
-  //   config.mutable_synapses()->DeleteSubrange(1,1);
-  // }
+  if (mpiRank == 0)
+  {
+    config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
+    config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
+  }
+  else
+  {
+    config.mutable_neurons()->DeleteSubrange(0,1);
+    config.mutable_synapses()->DeleteSubrange(1,1);
+  }
 
   // Now that we've pruned the protobuf config, we'll initialize only the items belonging
   // to our rank into the ProgramConfig, which will be referenced by the equation.
@@ -128,15 +128,19 @@ int main(int argc, char** argv) {
       controlled_step_result result; // either success or fail
       do
       {
+        ode::hodgkinhuxley::HodgkinHuxleyEquation::setSpeculative(false);
         result = myStepper.try_step(equation, x, timeData[0], timeData[1]);
       } while (result == fail);
     }
 
-    // We do this rather than time+=observerStep because that can compound floating-point error
+    // We do this rather than keeping the timeData[0] values that is set by try_step
+    // upon a successful completion of a step because that may compound floating-point error.
     // Boost does this same thing with their integrate_const function.
     steps++;
     timeData[0] = c.startTime + static_cast<double>(steps)*observerStep;
-
+    // I belive that it's actually more accurate to leave the try_step output as-is, but this
+    // produces the same output as integrate_const.
+    //MPI_Abort(MPI_COMM_WORLD, 1);
   }
   // Make an observation at t=c.endTime
   observer(x, timeData[0], numNeuron, bufferSize, buffer);
@@ -144,7 +148,7 @@ int main(int argc, char** argv) {
   if (mpiRank == 0)
     tLogger.recordCalculationEndTime();
 
-  //free(timeData);
+  free(timeData);
   delete buffer;
 
   if (mpiRank == 0)
