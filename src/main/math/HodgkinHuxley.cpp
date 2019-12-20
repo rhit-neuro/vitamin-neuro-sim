@@ -127,7 +127,8 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
   if (!runIsSpeculative)
   {
-    vitamins.clearSpeculativeDataOlderThan(t); // This is not that great
+    vitamins.clearDataOlderThan(t-0.001);
+    //vitamins.clearSpeculativeDataOlderThan(t); // This is not that great
   }
   // std::cout << "Rank " << mpiRank << " is starting at t=" << t << std::endl;
 
@@ -319,6 +320,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     arrdHdt[j] = -arrH[j] / s.tauRise + (V > s.thresholdV ? s.h0 : 0);
   }
 
+  
   MPI_Wait(&sendRequest, MPI_STATUS_IGNORE);
   setSpeculative(true);
   // std::cout << "Rank " << mpiRank << " finished a system function call" << std::endl;

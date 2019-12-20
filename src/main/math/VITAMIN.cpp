@@ -89,12 +89,12 @@ void vitamin::VITAMINDS::clearDataOlderThan(double t)
 
 void vitamin::VITAMINDS::addPacket(VITAMINPacket* packet)
 {
-	int insertIndex = findPriorPacketIndex(packet->time)+1;
+	unsigned int insertIndex = findPriorPacketIndex(packet->time)+1; // vector::insert inserts before the specified position
 	// std::cout << "Inserting packet t=" << packet->time << " at index " << insertIndex << std::endl;
 	
 	if (insertIndex >= packets.size()) // 
 		packets.insert(packets.end(), packet);
-	else
+	else if (packet->time != packets[insertIndex]->time)
 		packets.insert(packets.begin() + insertIndex, packet);
 
 	// for (auto const& packet : packets)
@@ -114,25 +114,20 @@ double vitamin::VITAMINDS::interpolate(double t0, double t1, double y0, double y
 
 int vitamin::VITAMINDS::findPriorPacketIndex(double t)
 {
-	// Eww! A linear search?!
-	for (unsigned int i=0; i<packets.size(); i++)
+	int left = 0;
+	int right = packets.size() - 1;
+	int current = left;
+	while (left < right)
 	{
-		if (t <= packets[i]->time)
-			return i-1;
+		current = (left + right) / 2 + 1;
+		if (t < packets[current]->time)
+			right = current - 1;
+		else
+			left = current;
 	}
-	return packets.size() - 1;
 
-	// int left = 0;
-	// int right = packets.size() - 1;
-	// int current = left;
-	// while (left < right)
-	// {
-	// 	current = (left + right) / 2 + 1;
-	// 	if (t < packets[current]->time)
-	// 		right = current - 1;
-	// 	else
-	// 		left = current;
-	// }
-
-	// return current - 1;
+	if ((packets.size() != 0) && (packets[current]->time < t))
+		return current;
+	else
+		return current - 1;
 }
