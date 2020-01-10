@@ -128,7 +128,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   if (!runIsSpeculative)
   {
     vitamins.clearDataOlderThan(t-0.001);
-    //vitamins.clearSpeculativeDataOlderThan(t); // This is not that great
+    vitamins.clearSpeculativeDataOlderThan(t); // This is not that great
   }
   // std::cout << "Rank " << mpiRank << " is starting at t=" << t << std::endl;
 
@@ -241,57 +241,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     }
   }
 
-// #if USE_OPENMP
-//   #pragma omp parallel for default(shared)
-// #endif
-//   for (int i = 0; i < numOfNeurons; i++) {
-//     using namespace std;
-//     const NeuronConstants &n = c.getNeuronConstantAt(i);
-//     const double V = arrV[i];
-
-//     // Calculate dVdt
-//     arrdVdt[i] = -(ina(n.gbarna, arrMna[i], arrHna[i], V, n.ena) +
-//                    ip(n.gbarp, arrMp[i], V, n.ena) +
-//                    icaf(n.gbarcaf, arrMcaf[i], arrHcaf[i], V, n.eca) +
-//                    icas(n.gbarcas, arrMcas[i], arrHcas[i], V, n.eca) +
-//                    ik1(n.gbark1, arrMk1[i], arrHk1[i], V, n.ek) +
-//                    ik2(n.gbark2, arrMk2[i], V, n.ek) +
-//                    ika(n.gbarka, arrMka[i], arrHka[i], V, n.ek) +
-//                    ikf(n.gbarkf, arrMkf[i], V, n.ek) +
-//                    ih(n.gbarh, arrMh[i], V, n.eh) +
-//                    il(n.gbarl, V, n.el) +
-//                    isyns(V, arrP, arrM, arrG, c.getAllSynapseConstants(), *(n.incoming), n.incoming->size())
-//     ) / n.capacitance;
-
-//     // Calculate dMk2dt
-//     arrdMk2dt[i] = dMk2dt(V, arrMk2[i]);
-//     // Calculate dMpdt
-//     arrdMpdt[i] = dMpdt(V, arrMp[i]);
-//     // Calculate dMnadt
-//     arrdMnadt[i] = dMnadt(V, arrMna[i]);
-//     // Calculate dHnadt
-//     arrdHnadt[i] = dHnadt(V, arrHna[i]);
-//     // Calculate dMcafdt
-//     arrdMcafdt[i] = dMcafdt(V, arrMcaf[i]);
-//     // Calculate dHcafdt
-//     arrdHcafdt[i] = dHcafdt(V, arrHcaf[i]);
-//     // Calculate dMcasdt
-//     arrdMcasdt[i] = dMcasdt(V, arrMcas[i]);
-//     // Calculate dHcasdt
-//     arrdHcasdt[i] = dHcasdt(V, arrHcas[i]);
-//     // Calculate dMk1dt
-//     arrdMk1dt[i] = dMk1dt(V, arrMk1[i]);
-//     // Calculate dHk1dt
-//     arrdHk1dt[i] = dHk1dt(V, arrHk1[i]);
-//     // Calculate dMkadt
-//     arrdMkadt[i] = dMkadt(V, arrMka[i]);
-//     // Calculate dHkadt
-//     arrdHkadt[i] = dHkadt(V, arrHka[i]);
-//     // Calculate dMkfdt
-//     arrdMkfdt[i] = dMkfdt(V, arrMkf[i]);
-//     // Calculate dMhdt
-//     arrdMhdt[i] = dMhdt(V, arrMh[i]);
-//   }
 #if USE_OPENMP
   #pragma omp parallel for default(shared)
 #endif
@@ -320,8 +269,8 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     arrdHdt[j] = -arrH[j] / s.tauRise + (V > s.thresholdV ? s.h0 : 0);
   }
 
-  
-  MPI_Wait(&sendRequest, MPI_STATUS_IGNORE);
+  //MPI_Request_free(&sendRequest);
+ MPI_Wait(&sendRequest, MPI_STATUS_IGNORE);
   setSpeculative(true);
   // std::cout << "Rank " << mpiRank << " finished a system function call" << std::endl;
 }
