@@ -68,6 +68,17 @@ namespace ode {
          */
         void calculateNextState(const storage_type &xs, storage_type &dxdts, double t);
 
+        /**
+         * Sets the speculative flag in this equation instance
+         * Many numeric integration methods call calculateNextState multiple times to evaluate a
+         * given timestep. After the first call of calculateNextState, the inputs become somewhat
+         * speculative. For a parallel system with varying timesteps, we need a way to mark an
+         * execution of calculateNextState as being speculative or not.
+         * The first call is always non-speculative.
+         *
+         * TODO: get rid of static by reworking ode::hodgkinhuxley::calculateNextState's singleton
+         */
+        static void setSpeculative(bool speculative);
       protected:
         // We use function pointers to allow easy composition
         double (* dMk2dt) (double V, double mk2) = ::ode::hodgkinhuxley::curve::dMk2dt;
@@ -101,6 +112,8 @@ namespace ode {
 
         // Expose config to subclasses
         ProgramConfig *pc;
+        
+        static bool runIsSpeculative;
     };
   }
 #if INCLUDE_LUT_SUPPORT

@@ -14,11 +14,19 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   this->pc = &(ProgramConfig::getInstance());
 }
 
+// Out-of-class initialization is necessary for static variables
+bool ode::hodgkinhuxley::HodgkinHuxleyEquation::runIsSpeculative = false;
+
+void ode::hodgkinhuxley::HodgkinHuxleyEquation::setSpeculative(bool speculative)
+{
+  runIsSpeculative = speculative;
+}
+
 void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage_type &x, storage_type &dxdt, double t) {
-  ofstream timestamps;
-  timestamps.open("timestamps.csv", std::ios::out | std::ios::app);
-  timestamps << t << std::endl;
-  timestamps.close();
+  // ofstream timestamps;
+  // timestamps.open("timestamps.csv", std::ios::out | std::ios::app);
+  // timestamps << t << std::endl;
+  // timestamps.close();
 
   ProgramConfig &c = *pc;
   double *arrV = c.getVArray(const_cast<storage_type &>(x));
@@ -143,4 +151,34 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     // Calculate dHdt
     arrdHdt[j] = -arrH[j] / s.tauRise + (V > s.thresholdV ? s.h0 : 0);
   }
+
+
+  // if (!runIsSpeculative)
+  // {
+  //   using namespace std;
+  //   ofstream currents;
+  //   currents.open("currents.csv", std::ios::out | std::ios::app);
+  //   currents << t;
+  //   for (int i=0; i< numOfNeurons; i++)
+  //   {
+  //     const NeuronConstants &n = c.getNeuronConstantAt(i);
+  //     const double V = arrV[i];
+  //     currents  << "," << ina(n.gbarna, arrMna[i], arrHna[i], V, n.ena) << "," <<
+  //                ip(n.gbarp, arrMp[i], V, n.ena) << "," <<
+  //                icaf(n.gbarcaf, arrMcaf[i], arrHcaf[i], V, n.eca) << "," <<
+  //                icas(n.gbarcas, arrMcas[i], arrHcas[i], V, n.eca) << "," <<
+  //                ik1(n.gbark1, arrMk1[i], arrHk1[i], V, n.ek) << "," <<
+  //                ik2(n.gbark2, arrMk2[i], V, n.ek) << "," <<
+  //                ika(n.gbarka, arrMka[i], arrHka[i], V, n.ek) << "," <<
+  //                ikf(n.gbarkf, arrMkf[i], V, n.ek) << "," <<
+  //                ih(n.gbarh, arrMh[i], V, n.eh) << "," <<
+  //                il(n.gbarl, V, n.el) << "," <<
+  //                isyns(V, arrP, arrM, arrG, c.getAllSynapseConstants(), *(n.incoming), n.incoming->size());
+  //   }
+  //   currents << std::endl;
+  //   currents.close();
+  // }
+
+
+  setSpeculative(true);
 }
