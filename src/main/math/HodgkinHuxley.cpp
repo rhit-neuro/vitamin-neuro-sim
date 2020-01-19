@@ -127,7 +127,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
   if (!runIsSpeculative)
   {
-    vitamins.clearDataOlderThan(t-0.001);
+    vitamins.clearDataOlderThan(t-0.03); // Empirically works...
     vitamins.clearSpeculativeDataOlderThan(t); // This is not that great
   }
   // std::cout << "Rank " << mpiRank << " is starting at t=" << t << std::endl;
@@ -247,8 +247,9 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   for (int j = 0; j < numOfSynapses; j++) {
     using namespace std;
     const SynapseConstants &s = c.getSynapseConstantAt(j);
-    const int sourceNeuronIndex = s.source;
-    const NeuronConstants &n = c.getNeuronConstantAt(sourceNeuronIndex);
+    const int sourceNeuronIndex = 0; // Each proc only has one neuron now.
+    //const int sourceNeuronIndex = s.source;
+    const NeuronConstants &n = c.getNeuronConstantAt(0);
     const double V = arrV[sourceNeuronIndex];
 
     // Calculate dPdt

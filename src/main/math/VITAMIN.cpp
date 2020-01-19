@@ -56,6 +56,7 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 
 			xiyi = interpolate(priorPacket->time, afterPacket->time, priorPacket->xiyi, afterPacket->xiyi, t);
 			Exiyi = interpolate(priorPacket->time, afterPacket->time, priorPacket->Exiyi, afterPacket->Exiyi, t);
+			//std::cout << "Interpolated results " << xiyi << " " << Exiyi << std::endl;
 			break;
 		}
 	}
@@ -106,9 +107,9 @@ double vitamin::VITAMINDS::interpolate(double t0, double t1, double y0, double y
 {
 	double slope = (y1 - y0) / (t1 - t0);
 
-	//std::cout << t0 << " " << t1 << " " << y0 << " " << y1 << " " << ti << " " << slope << std::endl;
+	//std::cout << t0 << " " << t1 << " " << y0 << " " << y1 << " " << ti << " " << ti*slope+y0 << std::endl;
 
-	return ti*slope + y0;
+	return (ti-t0)*slope + y0;
 }
 
 
