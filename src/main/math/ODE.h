@@ -7,6 +7,8 @@
 #include "VITAMIN.h"
 
 #include <mpi.h>
+#include <map>
+#include <vector>
 
 using namespace global_definitions;
 using namespace config;
@@ -121,11 +123,11 @@ namespace ode {
 
         static bool runIsSpeculative;
 
-        vitamin::VITAMINDS vitamins;
+        std::vector<std::map<int, vitamin::VITAMINDS>> vitamins;
 
         int mpiRank, mpiSize;
-        MPI_Request sendRequest;
-        double* sendData;
+        MPI_Request* sendRequests;
+        double** sendData;
     };
   }
 

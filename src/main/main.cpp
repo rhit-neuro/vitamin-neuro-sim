@@ -57,26 +57,48 @@ int main(int argc, char** argv) {
   JsonToProtobufConfigConverter converter;
   Config config = converter.readConfig(const_cast<string &>(inputFile));
 
-  // const auto totalNeurons = config.neurons_size();
-  // const auto totalSynapses = config.neurons_size();
 
-  // // FIXME: Hard-coded like an idiot
-  // int neuronCounts[2] = {1, 1};
-  // int neuronAssignments[2][1] = {{0}, {1}};
-  // int synapseCounts[2] = {1, 1};
-  // int synapseAssignments[2][1] = {{1}, {0}}; //synapse 0 goes from N2 to N1
+  // My placeholder datastructure is these two goofy arrays
+  int* neuronCounts = (int*) malloc(mpiSize*sizeof(int)); // # of neurons per proc
+  int** neuronMapping = (int**) malloc(mpiSize*sizeof(int*)); // logical indices of these neurons
+  const auto totalNeurons = config.neurons_size();
+  int currentIndex = 0;
+  for (int i=0; i<mpiSize; i++)
+  {
+    neuronCounts[i] = totalNeurons / mpiSize;
+    if (i == mpiSize-1)
+      neuronCounts[i] += totalNeurons % mpiSize; // TODO - Fix this for more equitable distribution
+      // Something like adding one to each of the first t%m neurons would be a lot better
+    neuronMapping[i] = (int*) malloc(sizeof(int)*neuronCounts[i]);
 
-  //FIXME: Don't hard-code this either, you idiot
-  if (mpiRank == 0)
-  {
-    config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
-    config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
+    // cout << "Rank " << mpiRank << ": ";
+    for (int j=0; j<neuronCounts[i]; j++)
+    {
+      // cout << currentIndex << ", ";
+      neuronMapping[i][j] = currentIndex++;
+    }
+    // cout << endl;
   }
-  else
-  {
-    config.mutable_neurons()->DeleteSubrange(0,1);
-    config.mutable_synapses()->DeleteSubrange(1,1);
-  }
+
+  // // const auto totalSynapses = config.neurons_size();
+
+  // // // FIXME: Hard-coded like an idiot
+  // // int neuronCounts[2] = {1, 1};
+  // // int neuronAssignments[2][1] = {{0}, {1}};
+  // // int synapseCounts[2] = {1, 1};
+  // // int synapseAssignments[2][1] = {{1}, {0}}; //synapse 0 goes from N2 to N1
+
+  // //FIXME: Don't hard-code this either, you idiot
+  // if (mpiRank == 0)
+  // {
+  //   config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
+  //   config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
+  // }
+  // else
+  // {
+  //   config.mutable_neurons()->DeleteSubrange(0,1);
+  //   config.mutable_synapses()->DeleteSubrange(1,1);
+  // }
 
   // Now that we've pruned the protobuf config, we'll initialize only the items belonging
   // to our rank into the ProgramConfig, which will be referenced by the equation.
@@ -85,16 +107,20 @@ int main(int argc, char** argv) {
 
   config::ProgramConfig &c = config::ProgramConfig::getInstance();
   try {
-    c.loadProtobufConfig(config);
+    c.loadProtobufConfig(config, neuronCounts, neuronMapping);
   } catch (exception &e) {
     cerr << e.what() << endl;
     MPI_Finalize();
     return 1;
   }
+
+  // MPI_Finalize();
+  // return 0;
+
   if (mpiRank == 0)
     tLogger.recordLoadConfigEndTime();
 
-  const auto numNeuron = config.neurons_size();
+  const auto numNeuron = c.numOfNeurons;//config.neurons_size();
   const int bufferSize = numNeuron + 1;
   const int precision = vm["output-precision"].as<int>();
   const int verbosity = vm["verbose-level"].as<int>();
@@ -102,7 +128,7 @@ int main(int argc, char** argv) {
 
   sequential::ode_system_function *equation = factory::equation::getEquation(vm);
 
-  storage_type x = c.getInitialStateValues();
+  storage_type x = c.getInitialStateValues(neuronMapping);
   auto myStepper = make_controlled(c.absoluteError, c.relativeError, runge_kutta_dopri5<storage_type>());
   auto timeData = (double*) malloc(2*sizeof(double));
   double observerStep = 0.00025;

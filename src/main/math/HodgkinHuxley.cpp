@@ -11,11 +11,32 @@ void ode::hodgkinhuxley::calculateNextState(const storage_type &xs, storage_type
 
 ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   this->pc = &(ProgramConfig::getInstance());
+  ProgramConfig& c = *pc;
 
   MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
   MPI_Comm_rank(MPI_COMM_WORLD, &mpiRank);
 
-  sendData = (double*) malloc(4*sizeof(double)); //FIXME - Memory leak and a hack
+  //FIXME - Memory leak and a hack
+  this->sendData = (double**) malloc(c.numOfSynapses*sizeof(double*)); 
+  for (int i=0; i<c.numOfSynapses; i++)
+    this->sendData[i] = (double*) malloc(4*sizeof(double));
+
+  this->sendRequests = (MPI_Request *) malloc(c.numOfSynapses * sizeof(MPI_Request));
+
+  for (int i=0; i<c.numOfNeurons; i++)
+  {
+    const auto &n = c.getNeuronConstantAt(i);
+    std::map<int, vitamin::VITAMINDS> synapseMap;
+    // std::cout << "Rank " << mpiRank << ", neuron " << i << ": ";
+    for (int j=0; j<n.incoming->size(); j++)
+    {
+      vitamin::VITAMINDS newVitamin;
+      synapseMap[n.incoming->Get(j)] = newVitamin;
+      // std::cout << "S" << n.incoming->Get(j) << ", ";
+    }
+    // std::cout << std::endl;
+    this->vitamins.push_back(synapseMap);
+  }
 }
 
 // Out-of-class initialization is necessary for static variables
@@ -32,24 +53,19 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
       double *arrP, double *arrM, double *arrG, SynapseConstants *allSynapses, double t)
                                          // ProtobufRepeatedInt32 &ownSynapses, int numOfOwnSynapses) 
 {
-  //FIXME: THIS IS A HACK!!!!
-  int numOfOwnSynapses = 1;
-  int synapseIndex = 0;
+  //ProgramConfig &c = *pc;
 
-  // TODO Investigate the formula expressed here. It's not the same as in the paper
-  //#pragma omp parallel for reduction(+:result)
-  for (int i = 0; i < numOfOwnSynapses; i++) {
-    //const int synapseIndex = ownSynapses[i];
-    const SynapseConstants &s = allSynapses[i]; //allSynapses[synapseIndex];
+  for (int i = 0; i < pc->numOfSynapses; i++) {
+    const SynapseConstants &s = allSynapses[i];
     const double Esyn = s.esyn;
     const double gbarsyng = s.gbarsyng;
     const double gbarsyns = s.gbarsyns;
     const double cGraded = s.cGraded;
     const double tauDecay = s.tauDecay;
     const double tauRise = s.tauRise;
-    const double P = arrP[synapseIndex];
-    const double M = arrM[synapseIndex];
-    const double g = arrG[synapseIndex];
+    const double P = arrP[i];
+    const double M = arrM[i];
+    const double g = arrG[i];
     const double P3 = pow(P, 3);
     double isyng = gbarsyng * P3 / (cGraded + P3);
     // TODO Investigate: magic number t0
@@ -61,20 +77,23 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
     
     double xiyi = isyns + isyng;
 
-    sendData[0] = (runIsSpeculative) ? 1.0 : 0.0;
-    sendData[1] = t;
-    sendData[2] = xiyi;
-    sendData[3] = Esyn*xiyi;
+    sendData[i][0] = (runIsSpeculative) ? 1.0 : 0.0;
+    sendData[i][1] = t;
+    sendData[i][2] = xiyi;
+    sendData[i][3] = Esyn*xiyi;
+
+    MPI_Isend(sendData[i], 4, MPI_DOUBLE, s.destinationRank, s.globalID, MPI_COMM_WORLD, &(sendRequests[i]));
+    // std::cout << "Rank " << mpiRank << ", synapse " << s.globalID << std::endl;
 
     //FIXME: HACK
-    if (mpiRank == 0)
-    { 
-      MPI_Isend(sendData, 4, MPI_DOUBLE, 1, 1, MPI_COMM_WORLD, &sendRequest); //tagged w/ synapse #1
-    }
-    else if (mpiRank == 1)
-    {
-      MPI_Isend(sendData, 4, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendRequest); //tagged w/ synapse #0
-    }
+    // if (mpiRank == 0)
+    // { 
+    //   MPI_Isend(sendData, 4, MPI_DOUBLE, 1, 1, MPI_COMM_WORLD, &sendRequest); //tagged w/ synapse #1
+    // }
+    // else if (mpiRank == 1)
+    // {
+    //   MPI_Isend(sendData, 4, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendRequest); //tagged w/ synapse #0
+    // }
 
     // std::cout << "Rank " << mpiRank << " sent a packet" << std::endl;
   }
@@ -127,25 +146,47 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
   if (!runIsSpeculative)
   {
-    vitamins.clearDataOlderThan(t-0.03); // Empirically works...
-    vitamins.clearSpeculativeDataOlderThan(t); // This is not that great
+    for (int i=0; i<vitamins.size(); i++)
+    {
+      auto iter = vitamins[i].begin();
+      while (iter != vitamins[i].end())
+      {
+        iter->second.clearDataOlderThan(t-0.03); // Empirically works...
+        iter->second.clearSpeculativeDataOlderThan(t); // This is not that great
+        iter++; // WHAT. THE. HECK.
+      }
+    }
   }
   // std::cout << "Rank " << mpiRank << " is starting at t=" << t << std::endl;
 
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
 
+  // I'd like not to have to make this silly thing every time I call calculateNextState...
   std::queue<Neuron> neurons;
+  for (int i=0; i<numOfNeurons; i++)
+  {
+    Neuron newNeuron;
+    newNeuron.localIndex = i;
+    const auto &n = c.getNeuronConstantAt(i);
+    for (int j=0; j<n.incoming->size(); j++)
+    {
+      const int globalSynapseIndex = n.incoming->Get(j);
+      newNeuron.pendingSynapses.push(globalSynapseIndex);
+    }
+    neurons.push(newNeuron);
+  }
 
-  //FIXME: HACK
-  Neuron testNeuron;
-  testNeuron.localIndex = 0;
-  if (mpiRank == 0)
-    testNeuron.pendingSynapses.push(0); // need to receive synapse 0
-  else if (mpiRank == 1)
-    testNeuron.pendingSynapses.push(1);
 
-  neurons.push(testNeuron);
+  // //FIXME: HACK
+  // Neuron testNeuron;
+  // testNeuron.localIndex = 0;
+  // if (mpiRank == 0)
+  //   testNeuron.pendingSynapses.push(0); // need to receive synapse 0
+  // else if (mpiRank == 1)
+  //   testNeuron.pendingSynapses.push(1);
+
+  // neurons.push(testNeuron);
 
   while (!neurons.empty())
   {
@@ -156,34 +197,41 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
       neuron.pendingSynapses.pop();
       
       int flag = 0;
-      if (mpiRank == 0)
-        MPI_Iprobe(1, 0, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); //syn0 from rank 1
-      else if (mpiRank == 1)
-        MPI_Iprobe(0, 1, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); //syn1 from rank 0
+      MPI_Status status;
+      MPI_Iprobe(MPI_ANY_SOURCE, globalSynapse, MPI_COMM_WORLD, &flag, &status);
+
+      // if (mpiRank == 0)
+      //   MPI_Iprobe(1, 0, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); //syn0 from rank 1
+      // else if (mpiRank == 1)
+      //   MPI_Iprobe(0, 1, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); //syn1 from rank 0
+
+      vitamin::VITAMINDS& relevantVitamin = vitamins[neuron.localIndex][globalSynapse];
 
       if (flag)
       {
         // std::cout << "Rank " << mpiRank << " has a pending packet" << std::endl;
         double recvData[4];
-        if (mpiRank == 0)
-          MPI_Recv(recvData, 4, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        else if (mpiRank == 1)
-          MPI_Recv(recvData, 4, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        vitamins.addPacket(new vitamin::VITAMINPacket((recvData[0] == 1), recvData[1], recvData[2], recvData[3]));
+        MPI_Recv(recvData, 4, MPI_DOUBLE, status.MPI_SOURCE, globalSynapse, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // if (mpiRank == 0)
+        //   MPI_Recv(recvData, 4, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // else if (mpiRank == 1)
+        //   MPI_Recv(recvData, 4, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        relevantVitamin.addPacket(new vitamin::VITAMINPacket((recvData[0] == 1), recvData[1], recvData[2], recvData[3]));
         // std::cout << "Rank " << mpiRank << " saved a packet" << std::endl;
       }
 
-      if (vitamins.haveDataForTime(t))
+      if (relevantVitamin.haveDataForTime(t))
       {
-        neuron.isynsAcc += vitamins.calculateIsyns(t, arrV[neuron.localIndex]);
+        neuron.isynsAcc += relevantVitamin.calculateIsyns(t, arrV[neuron.localIndex]);
         // std::cout << "Rank " << mpiRank << " finished synapse at t=" << t << std::endl;
       }
       else // put this synapse back in the queue
       {
         neuron.pendingSynapses.push(globalSynapse);
       }
-
     }
 
     if (neuron.pendingSynapses.empty())
@@ -247,8 +295,8 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   for (int j = 0; j < numOfSynapses; j++) {
     using namespace std;
     const SynapseConstants &s = c.getSynapseConstantAt(j);
-    const int sourceNeuronIndex = 0; // Each proc only has one neuron now.
-    //const int sourceNeuronIndex = s.source;
+    //const int sourceNeuronIndex = 0; // Each proc only has one neuron now.
+    const int sourceNeuronIndex = s.source;
     const NeuronConstants &n = c.getNeuronConstantAt(0);
     const double V = arrV[sourceNeuronIndex];
 
@@ -270,8 +318,10 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     arrdHdt[j] = -arrH[j] / s.tauRise + (V > s.thresholdV ? s.h0 : 0);
   }
 
+  // MPI_Abort(MPI_COMM_WORLD, 1);
+
   //MPI_Request_free(&sendRequest);
- MPI_Wait(&sendRequest, MPI_STATUS_IGNORE);
+  MPI_Waitall(numOfSynapses, sendRequests, MPI_STATUSES_IGNORE);
   setSpeculative(true);
   // std::cout << "Rank " << mpiRank << " finished a system function call" << std::endl;
 }

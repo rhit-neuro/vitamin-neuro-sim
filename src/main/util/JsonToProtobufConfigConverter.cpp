@@ -141,9 +141,9 @@ Config JsonToProtobufConfigConverter::readConfig(string &input_file) {
           Config_Synapse *s = c.add_synapses();
           if (j["configuration"]["synapseParameters"].find(synIt.key()) !=
               j["configuration"]["synapseParameters"].end()) {
-            //std::cout << "Source name: " << synIt.value().at(synNum) << ", " << nameToIndex[synIt.value().at(synNum)] << '\n';
+            // std::cout << "Source: (" << synIt.value().at(synNum) << ", " << nameToIndex[synIt.value().at(synNum)] << ")\tDest: (";
+            // std::cout << it.key() << ", " << index << ")\tID: " << synapseIndex << std::endl;
             s->set_source(nameToIndex[synIt.value().at(synNum)]);
-            //std::cout << s->source() << '\n';
             s->set_gbarsyng(getRandomNormal(
               j["configuration"]["synapseParameters"][synIt.key()]["gbarsyng"],
               j["configuration"]["synapseParameters"][synIt.key()]["gbarsyng_dev"]
