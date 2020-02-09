@@ -22,14 +22,7 @@ bool vitamin::VITAMINDS::haveDataForTime(double t)
 		return false;
 
 	if (packets.back()->time < t)
-	{
-		// int rank;
-		// MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-		// if (rank == 0 && t - 0.0001614449 < 0.0000001)
-		// 	std::cout << packets.size() << std::endl;
 		return false;
-	}
 
 	return true;
 }
@@ -66,26 +59,41 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 
 void vitamin::VITAMINDS::clearSpeculativeDataOlderThan(double t)
 {
-	std::vector<VITAMINPacket*> newPackets;
-	for (unsigned int i=0; i<packets.size(); i++)
-		if (packets[i]->speculative && (packets[i]->time < t))
-			delete packets[i];
+	auto iter = packets.begin();
+	while (iter != packets.end())
+	{
+		if ((*iter)->time >= t)
+			break;
+		else if ((*iter)->speculative)
+			iter = packets.erase(iter);
 		else
-			newPackets.push_back(packets[i]);
+			++iter;
+	}
 
-	packets = newPackets;
+	// std::vector<VITAMINPacket*> newPackets;
+	// for (unsigned int i=0; i<packets.size(); i++)
+	// 	if (packets[i]->speculative && (packets[i]->time < t))
+	// 		delete packets[i];
+	// 	else
+	// 		newPackets.push_back(packets[i]);
+
+	// packets = newPackets;
 }
 
 void vitamin::VITAMINDS::clearDataOlderThan(double t)
 {
-	for (unsigned int i=0; i<packets.size(); i++)
-	{
-		if (packets[i]->time > t)
-		{
-			packets.erase(packets.begin(), packets.begin()+i); //noninclusive endpoint
-			return;
-		}
-	}
+	int prior = findPriorPacketIndex(t);
+	prior = (prior == -1) ? 0 : prior;
+	packets.erase(packets.begin(), packets.begin()+prior);
+
+	// for (unsigned int i=0; i<packets.size(); i++)
+	// {
+	// 	if (packets[i]->time > t)
+	// 	{
+	// 		packets.erase(packets.begin(), packets.begin()+i); //noninclusive endpoint
+	// 		return;
+	// 	}
+	// }
 }
 
 void vitamin::VITAMINDS::addPacket(VITAMINPacket* packet)

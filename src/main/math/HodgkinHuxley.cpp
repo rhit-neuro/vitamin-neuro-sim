@@ -47,11 +47,8 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::setSpeculative(bool speculative)
   runIsSpeculative = speculative;
 }
 
-// //FIXME - this should iterate over the neurons in this rank and work on each of their synapses
-// This will work because this rank is responsible for every synapse leaving one of its neurons
 void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
       double *arrP, double *arrM, double *arrG, SynapseConstants *allSynapses, double t)
-                                         // ProtobufRepeatedInt32 &ownSynapses, int numOfOwnSynapses) 
 {
   //ProgramConfig &c = *pc;
 
@@ -68,10 +65,8 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
     const double g = arrG[i];
     const double P3 = pow(P, 3);
     double isyng = gbarsyng * P3 / (cGraded + P3);
-    // TODO Investigate: magic number t0
     const double t0 = 0;
     const double tPeak = t0 + (tauDecay * tauRise * log(tauDecay/tauRise)) / (tauDecay - tauRise);
-    // TODO Investigate: why
     const double fsyns = 1 / (exp(-(tPeak - t0)/tauDecay) + exp(-(tPeak - t0)/tauRise));
     const double isyns = M * gbarsyns * g * fsyns;
     
@@ -84,16 +79,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
 
     MPI_Isend(sendData[i], 4, MPI_DOUBLE, s.destinationRank, s.globalID, MPI_COMM_WORLD, &(sendRequests[i]));
     // std::cout << "Rank " << mpiRank << ", synapse " << s.globalID << std::endl;
-
-    //FIXME: HACK
-    // if (mpiRank == 0)
-    // { 
-    //   MPI_Isend(sendData, 4, MPI_DOUBLE, 1, 1, MPI_COMM_WORLD, &sendRequest); //tagged w/ synapse #1
-    // }
-    // else if (mpiRank == 1)
-    // {
-    //   MPI_Isend(sendData, 4, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &sendRequest); //tagged w/ synapse #0
-    // }
 
     // std::cout << "Rank " << mpiRank << " sent a packet" << std::endl;
   }
@@ -162,7 +147,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
 
-  // I'd like not to have to make this silly thing every time I call calculateNextState...
+  //I'd like not to have to make this silly thing every time I call calculateNextState...
   std::queue<Neuron> neurons;
   for (int i=0; i<numOfNeurons; i++)
   {
@@ -177,17 +162,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     neurons.push(newNeuron);
   }
 
-
-  // //FIXME: HACK
-  // Neuron testNeuron;
-  // testNeuron.localIndex = 0;
-  // if (mpiRank == 0)
-  //   testNeuron.pendingSynapses.push(0); // need to receive synapse 0
-  // else if (mpiRank == 1)
-  //   testNeuron.pendingSynapses.push(1);
-
-  // neurons.push(testNeuron);
-
   while (!neurons.empty())
   {
     Neuron neuron = neurons.front(); neurons.pop(); // This is a pop operation now
@@ -195,29 +169,23 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     {
       int globalSynapse = neuron.pendingSynapses.front();
       neuron.pendingSynapses.pop();
+      vitamin::VITAMINDS& relevantVitamin = vitamins[neuron.localIndex][globalSynapse];
+
+      if (relevantVitamin.haveDataForTime(t))
+      {
+        neuron.isynsAcc += relevantVitamin.calculateIsyns(t, arrV[neuron.localIndex]);
+        continue;
+      }
       
       int flag = 0;
       MPI_Status status;
       MPI_Iprobe(MPI_ANY_SOURCE, globalSynapse, MPI_COMM_WORLD, &flag, &status);
 
-      // if (mpiRank == 0)
-      //   MPI_Iprobe(1, 0, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); //syn0 from rank 1
-      // else if (mpiRank == 1)
-      //   MPI_Iprobe(0, 1, MPI_COMM_WORLD, &flag, MPI_STATUS_IGNORE); //syn1 from rank 0
-
-      vitamin::VITAMINDS& relevantVitamin = vitamins[neuron.localIndex][globalSynapse];
-
       if (flag)
       {
         // std::cout << "Rank " << mpiRank << " has a pending packet" << std::endl;
         double recvData[4];
-
         MPI_Recv(recvData, 4, MPI_DOUBLE, status.MPI_SOURCE, globalSynapse, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-        // if (mpiRank == 0)
-        //   MPI_Recv(recvData, 4, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        // else if (mpiRank == 1)
-        //   MPI_Recv(recvData, 4, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         relevantVitamin.addPacket(new vitamin::VITAMINPacket((recvData[0] == 1), recvData[1], recvData[2], recvData[3]));
         // std::cout << "Rank " << mpiRank << " saved a packet" << std::endl;
