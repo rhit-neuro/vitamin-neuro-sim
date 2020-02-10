@@ -18,17 +18,19 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
 
   //FIXME - Memory leak and a hack
   this->sendData = (double**) malloc(c.numOfSynapses*sizeof(double*)); 
-  for (int i=0; i<c.numOfSynapses; i++)
+  for (int i=0; i<c.numOfSynapses; ++i)
     this->sendData[i] = (double*) malloc(4*sizeof(double));
 
   this->sendRequests = (MPI_Request *) malloc(c.numOfSynapses * sizeof(MPI_Request));
+  for (int i=0; i<c.numOfSynapses; ++i)
+    this->sendRequests[i] = MPI_REQUEST_NULL;
 
-  for (int i=0; i<c.numOfNeurons; i++)
+  for (int i=0; i<c.numOfNeurons; ++i)
   {
     const auto &n = c.getNeuronConstantAt(i);
     std::map<int, vitamin::VITAMINDS> synapseMap;
     // std::cout << "Rank " << mpiRank << ", neuron " << i << ": ";
-    for (int j=0; j<n.incoming->size(); j++)
+    for (int j=0; j<n.incoming->size(); ++j)
     {
       vitamin::VITAMINDS newVitamin;
       synapseMap[n.incoming->Get(j)] = newVitamin;
@@ -50,9 +52,9 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::setSpeculative(bool speculative)
 void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
       double *arrP, double *arrM, double *arrG, SynapseConstants *allSynapses, double t)
 {
-  //ProgramConfig &c = *pc;
+  // ProgramConfig &c = *pc;
 
-  for (int i = 0; i < pc->numOfSynapses; i++) {
+  for (int i = 0; i < pc->numOfSynapses; ++i) {
     const SynapseConstants &s = allSynapses[i];
     const double Esyn = s.esyn;
     const double gbarsyng = s.gbarsyng;
@@ -77,9 +79,25 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
     sendData[i][2] = xiyi;
     sendData[i][3] = Esyn*xiyi;
 
-    MPI_Isend(sendData[i], 4, MPI_DOUBLE, s.destinationRank, s.globalID, MPI_COMM_WORLD, &(sendRequests[i]));
-    // std::cout << "Rank " << mpiRank << ", synapse " << s.globalID << std::endl;
+    if (s.destinationRank == mpiRank)
+    {
+      for (int neuron=0; neuron < pc->numOfNeurons; ++neuron)
+      {
+        const NeuronConstants &n = pc->getNeuronConstantAt(neuron);
+        if (n.globalID == s.destID)
+        {
+          vitamin::VITAMINDS& relevantVitamin = vitamins[neuron][s.globalID];
+          relevantVitamin.addPacket(new vitamin::VITAMINPacket(runIsSpeculative, sendData[i][1], sendData[i][2], sendData[i][3]));
+          break;
+        }    
+      }
+    }
+    else
+    {
+      MPI_Isend(sendData[i], 4, MPI_DOUBLE, s.destinationRank, s.globalID, MPI_COMM_WORLD, &(sendRequests[i]));
+    }
 
+    // std::cout << "Rank " << mpiRank << ", synapse " << s.globalID << std::endl;
     // std::cout << "Rank " << mpiRank << " sent a packet" << std::endl;
   }
 }
@@ -131,14 +149,14 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
   if (!runIsSpeculative)
   {
-    for (int i=0; i<vitamins.size(); i++)
+    for (int i=0; i<vitamins.size(); ++i)
     {
       auto iter = vitamins[i].begin();
       while (iter != vitamins[i].end())
       {
         iter->second.clearDataOlderThan(t-0.03); // Empirically works...
         iter->second.clearSpeculativeDataOlderThan(t); // This is not that great
-        iter++; // WHAT. THE. HECK.
+        ++iter; // WHAT. THE. HECK.
       }
     }
   }
@@ -149,12 +167,12 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
 
   //I'd like not to have to make this silly thing every time I call calculateNextState...
   std::queue<Neuron> neurons;
-  for (int i=0; i<numOfNeurons; i++)
+  for (int i=0; i<numOfNeurons; ++i)
   {
     Neuron newNeuron;
     newNeuron.localIndex = i;
     const auto &n = c.getNeuronConstantAt(i);
-    for (int j=0; j<n.incoming->size(); j++)
+    for (int j=0; j<n.incoming->size(); ++j)
     {
       const int globalSynapseIndex = n.incoming->Get(j);
       newNeuron.pendingSynapses.push(globalSynapseIndex);
@@ -165,7 +183,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   while (!neurons.empty())
   {
     Neuron neuron = neurons.front(); neurons.pop(); // This is a pop operation now
-    for (unsigned int i=0; i<neuron.pendingSynapses.size(); i++)
+    for (unsigned int i=0; i<neuron.pendingSynapses.size(); ++i)
     {
       int globalSynapse = neuron.pendingSynapses.front();
       neuron.pendingSynapses.pop();
@@ -260,7 +278,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
 #if USE_OPENMP
   #pragma omp parallel for default(shared)
 #endif
-  for (int j = 0; j < numOfSynapses; j++) {
+  for (int j = 0; j < numOfSynapses; ++j) {
     using namespace std;
     const SynapseConstants &s = c.getSynapseConstantAt(j);
     //const int sourceNeuronIndex = 0; // Each proc only has one neuron now.
@@ -289,6 +307,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   // MPI_Abort(MPI_COMM_WORLD, 1);
 
   //MPI_Request_free(&sendRequest);
+  //std::cout << "Waiting\n";
   MPI_Waitall(numOfSynapses, sendRequests, MPI_STATUSES_IGNORE);
   setSpeculative(true);
   // std::cout << "Rank " << mpiRank << " finished a system function call" << std::endl;

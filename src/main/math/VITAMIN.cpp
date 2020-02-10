@@ -1,4 +1,5 @@
 #include "VITAMIN.h"
+#include <algorithm>
 #include <iostream>
 #include <mpi.h>
 
@@ -34,7 +35,7 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 	double xiyi, Exiyi;
 	xiyi = Exiyi = 0; // BEWARE
 
-	for (unsigned int i=prior; i<packets.size(); i++)
+	for (unsigned int i=prior; i<packets.size(); ++i)
 	{
 		if (packets[i]->time == t)
 		{
@@ -59,16 +60,21 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 
 void vitamin::VITAMINDS::clearSpeculativeDataOlderThan(double t)
 {
-	auto iter = packets.begin();
-	while (iter != packets.end())
-	{
-		if ((*iter)->time >= t)
-			break;
-		else if ((*iter)->speculative)
-			iter = packets.erase(iter);
-		else
-			++iter;
-	}
+	// consider remove_if?
+	packets.erase(std::remove_if(packets.begin(), packets.end(),
+								[&](VITAMINPacket* packet) { return (packet->time < t) && (packet->speculative); }),
+					packets.end());
+
+	// auto iter = packets.begin();
+	// while (iter != packets.end())
+	// {
+	// 	if ((*iter)->time >= t)
+	// 		break;
+	// 	else if ((*iter)->speculative)
+	// 		iter = packets.erase(iter);
+	// 	else
+	// 		++iter;
+	// }
 
 	// std::vector<VITAMINPacket*> newPackets;
 	// for (unsigned int i=0; i<packets.size(); i++)

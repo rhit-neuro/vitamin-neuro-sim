@@ -18,7 +18,7 @@ void ProgramConfig::loadProtobufConfig(protobuf_config::Config &pc, int* neuronC
   endTime = s.endtime();
 
   numOfNeurons = neuronCounts[mpiRank];
-  numOfSynapses = 0;
+  
   for (int i=0; i<pc.synapses_size(); i++) // TODO: Refactor the heck out of this
   {
     const auto &protoSynapse = pc.synapses(i);
@@ -166,6 +166,7 @@ void ProgramConfig::initializeNeuronConstantProperties(int** neuronMapping) {
   for (int i = 0; i < numOfNeurons; i++) {
     const auto &protoNeuron = pc.neurons(neuronMapping[mpiRank][i]);
     NeuronConstants *neuronPtr = neurons + i;
+    neuronPtr->globalID = neuronMapping[mpiRank][i];
     neuronPtr->gbarna = protoNeuron.gbarna();
     neuronPtr->gbarp = protoNeuron.gbarp();
     neuronPtr->gbarcaf = protoNeuron.gbarcaf();
@@ -238,6 +239,7 @@ void ProgramConfig::initializeSynapseConstantProperties(std::vector<int> synapse
           int index = std::distance(synapseIndices.begin(), itr);
           SynapseConstants *synapsePtr = synapses + index;
           synapsePtr->destinationRank = rank;
+          synapsePtr->destID = neuronMapping[rank][neuron];
         }
       }
     }

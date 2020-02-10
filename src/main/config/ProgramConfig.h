@@ -13,6 +13,7 @@ namespace config {
   typedef ::google::protobuf::RepeatedField<::google::protobuf::int32> ProtobufRepeatedInt32;
 
   typedef struct {
+    int globalID;
     double gbarna;
     double gbarp;
     double gbarcaf;
@@ -35,6 +36,7 @@ namespace config {
   typedef struct {
     int globalID; // I use this as the tag for VITAMIN transmissions
     int source;
+    int destID;
     int destinationRank; // each rank can hold multiple neurons
     double gbarsyng;
     double gbarsyns;
