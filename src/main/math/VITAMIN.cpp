@@ -1,7 +1,10 @@
 #include "VITAMIN.h"
 #include <algorithm>
 #include <iostream>
+#include <cmath>
 #include <mpi.h>
+
+
 
 vitamin::VITAMINPacket::VITAMINPacket(bool speculative, double time, double xiyi, double Exiyi)
 {
@@ -11,18 +14,23 @@ vitamin::VITAMINPacket::VITAMINPacket(bool speculative, double time, double xiyi
 	this->Exiyi = Exiyi;
 }
 
+bool vitamin::VITAMINPacket::operator <(const VITAMINPacket& packet) const
+{
+	return time < packet.time;
+}
+
 bool vitamin::VITAMINDS::haveDataForTime(double t)
 {
 	if (packets.empty())
 		return false;
 
-	if (packets.back()->time == t)
+	if (packets.back().time == t)
 		return true;
 
 	if (packets.size() < 2)
 		return false;
 
-	if (packets.back()->time < t)
+	if (packets.back().time < t)
 		return false;
 
 	return true;
@@ -31,28 +39,45 @@ bool vitamin::VITAMINDS::haveDataForTime(double t)
 double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 {
 	int prior = findPriorPacketIndex(t);
-	prior = (prior == -1) ? 0 : prior;
 	double xiyi, Exiyi;
 	xiyi = Exiyi = 0; // BEWARE
 
+	// if (prior > 0)
+	// 	--prior;
+
+	// std::cout << "Calculating at t=" << t << std::endl;
+
+	VITAMINPacket priorPacket(true, -1, 0, 0);
+
 	for (unsigned int i=prior; i<packets.size(); ++i)
 	{
-		if (packets[i]->time == t)
+		if (packets[i].time == t)
 		{
-			xiyi = packets[i]->xiyi;
-			Exiyi = packets[i]->Exiyi;
+			xiyi = packets[i].xiyi;
+			Exiyi = packets[i].Exiyi;
 			break;
 		}
-		else if (packets[i]->time > t)
+		else if (packets[i].time > t)
 		{
-			VITAMINPacket* priorPacket = packets[prior];
-			VITAMINPacket* afterPacket = packets[i];
+			VITAMINPacket afterPacket = packets[i];
+			// if (priorPacket.time == -1)
+			// {
+			// 	std::cout << "Breaking at index " << i << ", prior " << prior << std::endl;
+			// 	MPI_Abort(MPI_COMM_WORLD, 1);
+			// }
 
-			xiyi = interpolate(priorPacket->time, afterPacket->time, priorPacket->xiyi, afterPacket->xiyi, t);
-			Exiyi = interpolate(priorPacket->time, afterPacket->time, priorPacket->Exiyi, afterPacket->Exiyi, t);
+			xiyi = interpolate(priorPacket.time, afterPacket.time, priorPacket.xiyi, afterPacket.xiyi, t);
+			Exiyi = interpolate(priorPacket.time, afterPacket.time, priorPacket.Exiyi, afterPacket.Exiyi, t);
+
 			//std::cout << "Interpolated results " << xiyi << " " << Exiyi << std::endl;
 			break;
 		}
+
+		if (packets[i].time > priorPacket.time)
+		{
+			priorPacket = packets[i];
+		}
+
 	}
 	
 	return V*xiyi - Exiyi;
@@ -60,89 +85,49 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 
 void vitamin::VITAMINDS::clearSpeculativeDataOlderThan(double t)
 {
-	// consider remove_if?
 	packets.erase(std::remove_if(packets.begin(), packets.end(),
-								[&](VITAMINPacket* packet) { return (packet->time < t) && (packet->speculative); }),
+								[&](VITAMINPacket packet) { return (packet.time < t) && (packet.speculative); }),
 					packets.end());
-
-	// auto iter = packets.begin();
-	// while (iter != packets.end())
-	// {
-	// 	if ((*iter)->time >= t)
-	// 		break;
-	// 	else if ((*iter)->speculative)
-	// 		iter = packets.erase(iter);
-	// 	else
-	// 		++iter;
-	// }
-
-	// std::vector<VITAMINPacket*> newPackets;
-	// for (unsigned int i=0; i<packets.size(); i++)
-	// 	if (packets[i]->speculative && (packets[i]->time < t))
-	// 		delete packets[i];
-	// 	else
-	// 		newPackets.push_back(packets[i]);
-
-	// packets = newPackets;
 }
 
 void vitamin::VITAMINDS::clearDataOlderThan(double t)
 {
 	int prior = findPriorPacketIndex(t);
-	prior = (prior == -1) ? 0 : prior;
 	packets.erase(packets.begin(), packets.begin()+prior);
-
-	// for (unsigned int i=0; i<packets.size(); i++)
-	// {
-	// 	if (packets[i]->time > t)
-	// 	{
-	// 		packets.erase(packets.begin(), packets.begin()+i); //noninclusive endpoint
-	// 		return;
-	// 	}
-	// }
 }
 
-void vitamin::VITAMINDS::addPacket(VITAMINPacket* packet)
+void vitamin::VITAMINDS::addPacket(VITAMINPacket packet)
 {
-	unsigned int insertIndex = findPriorPacketIndex(packet->time)+1; // vector::insert inserts before the specified position
-	// std::cout << "Inserting packet t=" << packet->time << " at index " << insertIndex << std::endl;
-	
-	if (insertIndex >= packets.size()) // 
-		packets.insert(packets.end(), packet);
-	else if (packet->time != packets[insertIndex]->time)
-		packets.insert(packets.begin() + insertIndex, packet);
+	packets.insert(std::lower_bound(packets.begin(), packets.end(), packet), packet);
+
+	// int insertIndex = std::upper_bound(packets.begin(), packets.end(), packet) - packets.begin();
+	// std::cout << "Inserting packet t=" << packet.time << " at index " << insertIndex << std::endl;
 
 	// for (auto const& packet : packets)
-	// 	std::cout << packet->time << " ";
+	// 	std::cout << packet.time << " ";
 	// std::cout << std::endl;
 }
 
 double vitamin::VITAMINDS::interpolate(double t0, double t1, double y0, double y1, double ti)
 {
+	// http://paulbourke.net/miscellaneous/interpolation/
+
+	// -- Linear Interpolation -- //
 	double slope = (y1 - y0) / (t1 - t0);
-
-	//std::cout << t0 << " " << t1 << " " << y0 << " " << y1 << " " << ti << " " << ti*slope+y0 << std::endl;
-
 	return (ti-t0)*slope + y0;
+
+	// // -- Cosine Interpolation -- //
+	// double mu = (ti-t0) /(t1-t0);
+	// double mu2 = (1-cos(mu*M_PI))/2;
+	// return y0*(1-mu2) + y1*mu2;
 }
 
 
 int vitamin::VITAMINDS::findPriorPacketIndex(double t)
 {
-	int left = 0;
-	int right = packets.size() - 1;
-	int current = left;
-	while (left < right)
-	{
-		current = (left + right) / 2 + 1;
-		if (t < packets[current]->time)
-			right = current - 1;
-		else
-			left = current;
-	}
+	VITAMINPacket packet(true, t, 0, 0);
+	// an iterator pointing to the first index in packets where Packet.time < t.
+	auto lower = std::lower_bound(packets.begin(), packets.end(), packet);
 
-	if ((packets.size() != 0) && (packets[current]->time < t))
-		return current;
-	else
-		return current - 1;
+	return lower - packets.begin();
 }
