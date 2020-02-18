@@ -18,7 +18,7 @@ void ProgramConfig::loadProtobufConfig(protobuf_config::Config &pc, int* neuronC
   endTime = s.endtime();
 
   numOfNeurons = neuronCounts[mpiRank];
-  
+
   for (int i=0; i<pc.synapses_size(); i++) // TODO: Refactor the heck out of this
   {
     const auto &protoSynapse = pc.synapses(i);
@@ -198,6 +198,7 @@ void ProgramConfig::initializeSynapseConstantProperties(std::vector<int> synapse
 
   for (int i = 0; i < synapseIndices.size(); i++) {
     const auto &protoSynapse = pc.synapses(synapseIndices[i]);
+
     SynapseConstants *synapsePtr = synapses + i;
     synapsePtr->globalID = synapseIndices[i];
 
@@ -212,7 +213,6 @@ void ProgramConfig::initializeSynapseConstantProperties(std::vector<int> synapse
       }
     }
     
-    //synapsePtr->source = protoSynapse.source();
     synapsePtr->gbarsyng = protoSynapse.gbarsyng();
     synapsePtr->gbarsyns = protoSynapse.gbarsyns();
     synapsePtr->esyn = protoSynapse.esyn();

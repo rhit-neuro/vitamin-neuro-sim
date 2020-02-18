@@ -58,17 +58,28 @@ int main(int argc, char** argv) {
   Config config = converter.readConfig(const_cast<string &>(inputFile));
 
 
+  // //
+  //   int startIndex, endIndex;
+  // startIndex = (rank % D.size) * D.size/nProcs;
+  // startIndex += MIN(rank, D.size % nProcs);
+
+  // endIndex = startIndex + D.size/nProcs - 1;
+  // if (rank < (D.size % nProcs))
+  //   endIndex++;
+
+
+
   // My placeholder datastructure is these two goofy arrays
   int* neuronCounts = (int*) malloc(mpiSize*sizeof(int)); // # of neurons per proc
   int** neuronMapping = (int**) malloc(mpiSize*sizeof(int*)); // logical indices of these neurons
   const auto totalNeurons = config.neurons_size();
   int currentIndex = 0;
-  for (int i=0; i<mpiSize; i++)
+  for (int i=0; i<mpiSize; ++i)
   {
     neuronCounts[i] = totalNeurons / mpiSize;
-    if (i == mpiSize-1)
-      neuronCounts[i] += totalNeurons % mpiSize; // TODO - Fix this for more equitable distribution
-      // Something like adding one to each of the first t%m neurons would be a lot better
+    if (i < totalNeurons % mpiSize)
+      ++neuronCounts[i];
+
     neuronMapping[i] = (int*) malloc(sizeof(int)*neuronCounts[i]);
 
     // cout << "Rank " << mpiRank << ": ";
@@ -79,31 +90,6 @@ int main(int argc, char** argv) {
     }
     // cout << endl;
   }
-
-  // // const auto totalSynapses = config.neurons_size();
-
-  // // // FIXME: Hard-coded like an idiot
-  // // int neuronCounts[2] = {1, 1};
-  // // int neuronAssignments[2][1] = {{0}, {1}};
-  // // int synapseCounts[2] = {1, 1};
-  // // int synapseAssignments[2][1] = {{1}, {0}}; //synapse 0 goes from N2 to N1
-
-  // //FIXME: Don't hard-code this either, you idiot
-  // if (mpiRank == 0)
-  // {
-  //   config.mutable_neurons()->DeleteSubrange(1,1); // rank 0 doesn't need neuron 1
-  //   config.mutable_synapses()->DeleteSubrange(0,1); // rank 0 doesn't need synapse 0
-  // }
-  // else
-  // {
-  //   config.mutable_neurons()->DeleteSubrange(0,1);
-  //   config.mutable_synapses()->DeleteSubrange(1,1);
-  // }
-
-  // Now that we've pruned the protobuf config, we'll initialize only the items belonging
-  // to our rank into the ProgramConfig, which will be referenced by the equation.
-  // Notably, we still have vestiges of the deleted items in neurons' "incoming" arrays
-  // and synapses' "source" values. It is paramount to handle these properly in the equation.
 
   config::ProgramConfig &c = config::ProgramConfig::getInstance();
   try {
@@ -138,6 +124,7 @@ int main(int argc, char** argv) {
   if (mpiRank == 0)
     tLogger.recordCalculationStartTime();
 
+
   int steps = 0;
   while ((timeData[0]+observerStep) <= c.endTime)
   {
@@ -166,13 +153,19 @@ int main(int argc, char** argv) {
     timeData[0] = c.startTime + static_cast<double>(steps)*observerStep;
     // I belive that it's actually more accurate to leave the try_step output as-is, but this
     // produces the same output as integrate_const.
-    //MPI_Abort(MPI_COMM_WORLD, 1);
+    // MPI_Abort(MPI_COMM_WORLD, 1);
   }
   // Make an observation at t=c.endTime
   observer(x, timeData[0], numNeuron, bufferSize, buffer);
 
   if (mpiRank == 0)
     tLogger.recordCalculationEndTime();
+
+  cout << "Rank " << mpiRank << ": ";
+  std::vector<unsigned long long> waitCounts = ode::hodgkinhuxley::HodgkinHuxleyEquation::busyWaiters;
+  for (int i=0; i<waitCounts.size(); ++i)
+    cout << waitCounts[i] << ", ";
+  cout << endl;
 
   free(timeData);
   delete buffer;

@@ -84,6 +84,8 @@ namespace ode {
          * TODO: get rid of static by reworking ode::hodgkinhuxley::calculateNextState's singleton
          */
         static void setSpeculative(bool speculative);
+        static std::vector<unsigned long long> busyWaiters;
+
 
       protected:
         void broadcastIsynsValues(double *arrP, double *arrM, double *arrG, SynapseConstants *allSynapses, double t);
@@ -123,6 +125,7 @@ namespace ode {
 
         static bool runIsSpeculative;
 
+        std::queue<Neuron> preBuiltNeuronQueue;
         std::vector<std::map<int, vitamin::VITAMINDS>> vitamins;
 
         int mpiRank, mpiSize;

@@ -30,19 +30,37 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
     const auto &n = c.getNeuronConstantAt(i);
     std::map<int, vitamin::VITAMINDS> synapseMap;
     // std::cout << "Rank " << mpiRank << ", neuron " << i << ": ";
-    for (int j=0; j<n.incoming->size(); ++j)
-    {
-      vitamin::VITAMINDS newVitamin;
-      synapseMap[n.incoming->Get(j)] = newVitamin;
-      // std::cout << "S" << n.incoming->Get(j) << ", ";
-    }
+    // for (int j=0; j<n.incoming->size(); ++j)
+    // {
+    //   vitamin::VITAMINDS newVitamin;
+    //   synapseMap[n.incoming->Get(j)] = newVitamin;
+    //   std::cout << "S" << n.incoming->Get(j) << ", ";
+    // }
     // std::cout << std::endl;
     this->vitamins.push_back(synapseMap);
+  }
+
+  busyWaiters.reserve(c.numOfNeurons);
+  for (int i=0; i<c.numOfNeurons; ++i)
+    busyWaiters.push_back(0);
+
+  for (int i=0; i<c.numOfNeurons; ++i)
+  {
+    Neuron newNeuron;
+    newNeuron.localIndex = i;
+    const auto &n = c.getNeuronConstantAt(i);
+    for (int j=0; j<n.incoming->size(); ++j)
+    {
+      const int globalSynapseIndex = n.incoming->Get(j);
+      newNeuron.pendingSynapses.push(globalSynapseIndex);
+    }
+    this->preBuiltNeuronQueue.push(newNeuron);
   }
 }
 
 // Out-of-class initialization is necessary for static variables
 bool ode::hodgkinhuxley::HodgkinHuxleyEquation::runIsSpeculative = false;
+std::vector<unsigned long long> ode::hodgkinhuxley::HodgkinHuxleyEquation::busyWaiters;
 
 void ode::hodgkinhuxley::HodgkinHuxleyEquation::setSpeculative(bool speculative)
 {
@@ -87,7 +105,8 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
         if (n.globalID == s.destID)
         {
           vitamin::VITAMINDS& relevantVitamin = vitamins[neuron][s.globalID];
-          relevantVitamin.addPacket(new vitamin::VITAMINPacket(runIsSpeculative, sendData[i][1], sendData[i][2], sendData[i][3]));
+          vitamin::VITAMINPacket packet(runIsSpeculative, sendData[i][1], sendData[i][2], sendData[i][3]);
+          relevantVitamin.addPacket(packet);
           break;
         }    
       }
@@ -146,7 +165,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   double *arrdGdt = c.getGArray(dxdt);
   double *arrdHdt = c.getHArray(dxdt);
 
-  broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
   if (!runIsSpeculative)
   {
     for (int i=0; i<vitamins.size(); ++i)
@@ -154,35 +172,39 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
       auto iter = vitamins[i].begin();
       while (iter != vitamins[i].end())
       {
-        iter->second.clearDataOlderThan(t-0.03); // Empirically works...
-        iter->second.clearSpeculativeDataOlderThan(t); // This is not that great
+        // Only save the most recent non-speculative data
+        // (timestep is 0.00025, so this saves the last non-speculative data point)
+        iter->second.clearDataOlderThan(t-0.03); 
+        iter->second.clearSpeculativeDataOlderThan(t);
         ++iter; // WHAT. THE. HECK.
       }
     }
   }
+  broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
   // std::cout << "Rank " << mpiRank << " is starting at t=" << t << std::endl;
 
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
 
-  //I'd like not to have to make this silly thing every time I call calculateNextState...
-  std::queue<Neuron> neurons;
-  for (int i=0; i<numOfNeurons; ++i)
-  {
-    Neuron newNeuron;
-    newNeuron.localIndex = i;
-    const auto &n = c.getNeuronConstantAt(i);
-    for (int j=0; j<n.incoming->size(); ++j)
-    {
-      const int globalSynapseIndex = n.incoming->Get(j);
-      newNeuron.pendingSynapses.push(globalSynapseIndex);
-    }
-    neurons.push(newNeuron);
-  }
+  // Copy-construction doesn't seem to make much of a difference.
+  std::queue<Neuron> neurons(this->preBuiltNeuronQueue);
+  // for (int i=0; i<numOfNeurons; ++i)
+  // {
+  //   Neuron newNeuron;
+  //   newNeuron.localIndex = i;
+  //   const auto &n = c.getNeuronConstantAt(i);
+  //   for (int j=0; j<n.incoming->size(); ++j)
+  //   {
+  //     const int globalSynapseIndex = n.incoming->Get(j);
+  //     newNeuron.pendingSynapses.push(globalSynapseIndex);
+  //   }
+  //   neurons.push(newNeuron);
+  // }
 
   while (!neurons.empty())
   {
     Neuron neuron = neurons.front(); neurons.pop(); // This is a pop operation now
+    bool busyWaiting = true;
     for (unsigned int i=0; i<neuron.pendingSynapses.size(); ++i)
     {
       int globalSynapse = neuron.pendingSynapses.front();
@@ -191,26 +213,30 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
 
       if (relevantVitamin.haveDataForTime(t))
       {
+        busyWaiting = false;
         neuron.isynsAcc += relevantVitamin.calculateIsyns(t, arrV[neuron.localIndex]);
         continue;
-      }
-      
+      }     
+
       int flag = 0;
       MPI_Status status;
       MPI_Iprobe(MPI_ANY_SOURCE, globalSynapse, MPI_COMM_WORLD, &flag, &status);
 
       if (flag)
       {
+        busyWaiting = false;
         // std::cout << "Rank " << mpiRank << " has a pending packet" << std::endl;
         double recvData[4];
         MPI_Recv(recvData, 4, MPI_DOUBLE, status.MPI_SOURCE, globalSynapse, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        relevantVitamin.addPacket(new vitamin::VITAMINPacket((recvData[0] == 1), recvData[1], recvData[2], recvData[3]));
+        vitamin::VITAMINPacket packet((recvData[0] == 1), recvData[1], recvData[2], recvData[3]);
+        relevantVitamin.addPacket(packet);
         // std::cout << "Rank " << mpiRank << " saved a packet" << std::endl;
       }
 
       if (relevantVitamin.haveDataForTime(t))
       {
+        busyWaiting = false;
         neuron.isynsAcc += relevantVitamin.calculateIsyns(t, arrV[neuron.localIndex]);
         // std::cout << "Rank " << mpiRank << " finished synapse at t=" << t << std::endl;
       }
@@ -222,6 +248,7 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
 
     if (neuron.pendingSynapses.empty())
     {
+      busyWaiting = false;
       int i = neuron.localIndex;
       const NeuronConstants &n = c.getNeuronConstantAt(i);
       const double V = arrV[i];
@@ -273,6 +300,9 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     {
       neurons.push(neuron);
     }
+
+    if (busyWaiting)
+      ++busyWaiters[neuron.localIndex];
   }
 
 #if USE_OPENMP
