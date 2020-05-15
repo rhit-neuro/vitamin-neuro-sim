@@ -29,14 +29,6 @@ ode::hodgkinhuxley::HodgkinHuxleyEquation::HodgkinHuxleyEquation() {
   {
     const auto &n = c.getNeuronConstantAt(i);
     std::map<int, vitamin::VITAMINDS> synapseMap;
-    // std::cout << "Rank " << mpiRank << ", neuron " << i << ": ";
-    // for (int j=0; j<n.incoming->size(); ++j)
-    // {
-    //   vitamin::VITAMINDS newVitamin;
-    //   synapseMap[n.incoming->Get(j)] = newVitamin;
-    //   std::cout << "S" << n.incoming->Get(j) << ", ";
-    // }
-    // std::cout << std::endl;
     this->vitamins.push_back(synapseMap);
   }
 
@@ -70,8 +62,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::setSpeculative(bool speculative)
 void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
       double *arrP, double *arrM, double *arrG, SynapseConstants *allSynapses, double t)
 {
-  // ProgramConfig &c = *pc;
-
   for (int i = 0; i < pc->numOfSynapses; ++i) {
     const SynapseConstants &s = allSynapses[i];
     const double Esyn = s.esyn;
@@ -115,9 +105,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::broadcastIsynsValues(
     {
       MPI_Isend(sendData[i], 4, MPI_DOUBLE, s.destinationRank, s.globalID, MPI_COMM_WORLD, &(sendRequests[i]));
     }
-
-    // std::cout << "Rank " << mpiRank << ", synapse " << s.globalID << std::endl;
-    // std::cout << "Rank " << mpiRank << " sent a packet" << std::endl;
   }
 }
 
@@ -172,34 +159,19 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
       auto iter = vitamins[i].begin();
       while (iter != vitamins[i].end())
       {
-        // Only save the most recent non-speculative data
-        // (timestep is 0.00025, so this saves the last non-speculative data point)
-        iter->second.clearDataOlderThan(t-0.03); 
+        iter->second.clearDataOlderThan(t-0.03);  //empirically determined to work pretty well
         iter->second.clearSpeculativeDataOlderThan(t);
         ++iter; // WHAT. THE. HECK.
       }
     }
   }
   broadcastIsynsValues(arrP, arrM, arrG, c.getAllSynapseConstants(), t);
-  // std::cout << "Rank " << mpiRank << " is starting at t=" << t << std::endl;
 
   const int numOfNeurons = c.numOfNeurons;
   const int numOfSynapses = c.numOfSynapses;
 
-  // Copy-construction doesn't seem to make much of a difference.
+  // Copy-construction doesn't adversely affect runtime and is easier on the eyes
   std::queue<Neuron> neurons(this->preBuiltNeuronQueue);
-  // for (int i=0; i<numOfNeurons; ++i)
-  // {
-  //   Neuron newNeuron;
-  //   newNeuron.localIndex = i;
-  //   const auto &n = c.getNeuronConstantAt(i);
-  //   for (int j=0; j<n.incoming->size(); ++j)
-  //   {
-  //     const int globalSynapseIndex = n.incoming->Get(j);
-  //     newNeuron.pendingSynapses.push(globalSynapseIndex);
-  //   }
-  //   neurons.push(newNeuron);
-  // }
 
   while (!neurons.empty())
   {
@@ -225,20 +197,17 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
       if (flag)
       {
         busyWaiting = false;
-        // std::cout << "Rank " << mpiRank << " has a pending packet" << std::endl;
         double recvData[4];
         MPI_Recv(recvData, 4, MPI_DOUBLE, status.MPI_SOURCE, globalSynapse, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
         vitamin::VITAMINPacket packet((recvData[0] == 1), recvData[1], recvData[2], recvData[3]);
         relevantVitamin.addPacket(packet);
-        // std::cout << "Rank " << mpiRank << " saved a packet" << std::endl;
       }
 
       if (relevantVitamin.haveDataForTime(t))
       {
         busyWaiting = false;
         neuron.isynsAcc += relevantVitamin.calculateIsyns(t, arrV[neuron.localIndex]);
-        // std::cout << "Rank " << mpiRank << " finished synapse at t=" << t << std::endl;
       }
       else // put this synapse back in the queue
       {
@@ -311,7 +280,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
   for (int j = 0; j < numOfSynapses; ++j) {
     using namespace std;
     const SynapseConstants &s = c.getSynapseConstantAt(j);
-    //const int sourceNeuronIndex = 0; // Each proc only has one neuron now.
     const int sourceNeuronIndex = s.source;
     const NeuronConstants &n = c.getNeuronConstantAt(0);
     const double V = arrV[sourceNeuronIndex];
@@ -334,11 +302,6 @@ void ode::hodgkinhuxley::HodgkinHuxleyEquation::calculateNextState(const storage
     arrdHdt[j] = -arrH[j] / s.tauRise + (V > s.thresholdV ? s.h0 : 0);
   }
 
-  // MPI_Abort(MPI_COMM_WORLD, 1);
-
-  //MPI_Request_free(&sendRequest);
-  //std::cout << "Waiting\n";
   MPI_Waitall(numOfSynapses, sendRequests, MPI_STATUSES_IGNORE);
   setSpeculative(true);
-  // std::cout << "Rank " << mpiRank << " finished a system function call" << std::endl;
 }

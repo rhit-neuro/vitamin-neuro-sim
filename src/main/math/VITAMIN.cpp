@@ -42,11 +42,6 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 	double xiyi, Exiyi;
 	xiyi = Exiyi = 0; // BEWARE
 
-	// if (prior > 0)
-	// 	--prior;
-
-	// std::cout << "Calculating at t=" << t << std::endl;
-
 	VITAMINPacket priorPacket(true, -1, 0, 0);
 
 	for (unsigned int i=prior; i<packets.size(); ++i)
@@ -60,16 +55,10 @@ double vitamin::VITAMINDS::calculateIsyns(double t, double V)
 		else if (packets[i].time > t)
 		{
 			VITAMINPacket afterPacket = packets[i];
-			// if (priorPacket.time == -1)
-			// {
-			// 	std::cout << "Breaking at index " << i << ", prior " << prior << std::endl;
-			// 	MPI_Abort(MPI_COMM_WORLD, 1);
-			// }
 
 			xiyi = interpolate(priorPacket.time, afterPacket.time, priorPacket.xiyi, afterPacket.xiyi, t);
 			Exiyi = interpolate(priorPacket.time, afterPacket.time, priorPacket.Exiyi, afterPacket.Exiyi, t);
 
-			//std::cout << "Interpolated results " << xiyi << " " << Exiyi << std::endl;
 			break;
 		}
 
@@ -99,13 +88,6 @@ void vitamin::VITAMINDS::clearDataOlderThan(double t)
 void vitamin::VITAMINDS::addPacket(VITAMINPacket packet)
 {
 	packets.insert(std::lower_bound(packets.begin(), packets.end(), packet), packet);
-
-	// int insertIndex = std::upper_bound(packets.begin(), packets.end(), packet) - packets.begin();
-	// std::cout << "Inserting packet t=" << packet.time << " at index " << insertIndex << std::endl;
-
-	// for (auto const& packet : packets)
-	// 	std::cout << packet.time << " ";
-	// std::cout << std::endl;
 }
 
 double vitamin::VITAMINDS::interpolate(double t0, double t1, double y0, double y1, double ti)
