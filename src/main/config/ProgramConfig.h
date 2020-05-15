@@ -4,6 +4,8 @@
 
 #include <proto/protobuf_config.pb.h>
 #include "../global/GlobalDefinitions.h"
+#include <vector>
+
 
 using namespace global_definitions;
 
@@ -11,6 +13,7 @@ namespace config {
   typedef ::google::protobuf::RepeatedField<::google::protobuf::int32> ProtobufRepeatedInt32;
 
   typedef struct {
+    int globalID;
     double gbarna;
     double gbarp;
     double gbarcaf;
@@ -31,7 +34,10 @@ namespace config {
   } NeuronConstants;
 
   typedef struct {
+    int globalID; // I use this as the tag for VITAMIN transmissions
     int source;
+    int destID;
+    int destinationRank; // each rank can hold multiple neurons
     double gbarsyng;
     double gbarsyns;
     double esyn;
@@ -94,8 +100,10 @@ namespace config {
       int numOfSynapseVariables{0};
 
       // Public methods
+      void loadProtobufConfig(protobuf_config::Config &protoConfig, int* neuronCounts, int** neuronMapping);
       void loadProtobufConfig(protobuf_config::Config &protoConfig);
       storage_type & getInitialStateValues();
+      storage_type & getInitialStateValues(int** neuronMapping);
       NeuronConstants& getNeuronConstantAt(int neuronIndex);
       SynapseConstants& getSynapseConstantAt(int synapseIndex);
       SynapseConstants* getAllSynapseConstants();
@@ -128,6 +136,7 @@ namespace config {
       NeuronConstants *neurons{nullptr};
       SynapseConstants *synapses{nullptr};
       storage_type initialStateValues;
+      std::vector<int> synapseIndices;
 
       // Neuron variable offsets
       int offset_V{0};
@@ -158,9 +167,13 @@ namespace config {
       void initializeNeuronOffsets();
       void initializeSynapseOffsets();
       void initializeNeuronConstantProperties();
+      void initializeNeuronConstantProperties(int** neuronMapping);
+      void initializeSynapseConstantProperties(std::vector<int> synapseIndices, int* neuronCounts, int** neuronMapping);
       void initializeSynapseConstantProperties();
       void initializeNeuronVariables();
+      void initializeNeuronVariables(int** neuronMapping);
       void initializeSynapseVariables();
+      void initializeSynapseVariables(std::vector<int> synapseIndices);
   };
 
 }

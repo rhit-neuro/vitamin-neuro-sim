@@ -145,6 +145,11 @@ endif()
 find_package(Protobuf REQUIRED)
 
 include_directories(${Protobuf_INCLUDE_DIRS})
+
+# TODO: Improve how we're bundling in OpenMPI here
+find_package(MPI REQUIRED)
+include_directories(${MPI_INCLUDE_PATH})
+
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 #######################

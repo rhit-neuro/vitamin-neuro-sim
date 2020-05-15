@@ -4,6 +4,11 @@
 
 #include "../global/GlobalDefinitions.h"
 #include "../config/ProgramConfig.h"
+#include "VITAMIN.h"
+
+#include <mpi.h>
+#include <map>
+#include <vector>
 
 using namespace global_definitions;
 using namespace config;
@@ -68,7 +73,23 @@ namespace ode {
          */
         void calculateNextState(const storage_type &xs, storage_type &dxdts, double t);
 
+        /**
+         * Sets the speculative flag in this equation instance
+         * Many numeric integration methods call calculateNextState multiple times to evaluate a
+         * given timestep. After the first call of calculateNextState, the inputs become somewhat
+         * speculative. For a parallel system with varying timesteps, we need a way to mark an
+         * execution of calculateNextState as being speculative or not.
+         * The first call is always non-speculative.
+         *
+         * TODO: get rid of static by reworking ode::hodgkinhuxley::calculateNextState's singleton
+         */
+        static void setSpeculative(bool speculative);
+        static std::vector<unsigned long long> busyWaiters;
+
+
       protected:
+        void broadcastIsynsValues(double *arrP, double *arrM, double *arrG, SynapseConstants *allSynapses, double t);
+
         // We use function pointers to allow easy composition
         double (* dMk2dt) (double V, double mk2) = ::ode::hodgkinhuxley::curve::dMk2dt;
         double (* dMpdt) (double V, double mp) = ::ode::hodgkinhuxley::curve::dMpdt;
@@ -101,8 +122,19 @@ namespace ode {
 
         // Expose config to subclasses
         ProgramConfig *pc;
+
+        static bool runIsSpeculative;
+
+        std::queue<Neuron> preBuiltNeuronQueue;
+        std::vector<std::map<int, vitamin::VITAMINDS>> vitamins;
+
+        int mpiRank, mpiSize;
+        MPI_Request* sendRequests;
+        double** sendData;
     };
   }
+
+
 #if INCLUDE_LUT_SUPPORT
   namespace hodgkinhuxley_lut {
     namespace curve {
